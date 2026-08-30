@@ -80,15 +80,19 @@ def write_riffs_with_review(job: dict, gaps: list[dict], profile: dict,
     from . import judge
     drafts = _write_drafts(job, gaps, profile, bundles,
                           critique_context="")
+    print(f"    [judge] reviewing {len(drafts)} drafts")
     verdicts = judge.judge_riffs(job, drafts, bundles or [])
     out = []
     for d, v in zip(drafts, verdicts):
+        tag = f"gap{d['gap']:2d} score={v.get('score','?')}"
+        print(f"    [judge] {tag} {v['verdict']}")
         if v.get("verdict") == "rewrite" and (v.get("critique") or ""):
             rewrite = _write_drafts(job, gaps, profile, bundles,
                                     critique_context=_critique_for(d, v, bundles), )
-            # pick the rewrite matching this gap if produced, else drop
             match = next((rw for rw in rewrite if rw["gap"] == d["gap"]), None)
             if match:
+                match["_kept_from_rewrite"] = True
+                match["_critique"] = v["critique"]
                 out.append(match)
                 continue
         out.append(d)

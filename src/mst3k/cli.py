@@ -54,9 +54,12 @@ def cmd_render(args) -> None:
     profile = step("understand", lambda: understand.build_profile(job))
     print(f"    kind={profile.get('kind')}")
 
-    # 4 write (context-driven) + head-writer desk review
+    # 4 write (context-driven) with head-writer desk review pass
     riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
-    print(f"    {len(riffs)} riffs written")
+    kept = sum(1 for r in riffs if r.get("_kept_from_rewrite"))
+    note = f"{len(riffs)} riffs"
+    if kept: note += f" ({kept} improved by judge rewrites)"
+    print(f"    {note}")
 
     # 5 synthesize + fit
     def synth_all():
