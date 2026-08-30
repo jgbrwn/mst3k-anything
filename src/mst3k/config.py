@@ -38,7 +38,7 @@ DEFAULTS = {
     "silence_ratio_ok": 0.04,
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
-    "moment_hop_sec": 1.2,
+    "moment_hop_sec": 2.0,
     "speech_noise_db": "-35dB",
     "speech_dur": 0.3,
     "min_riff_space_sec": 10.0,

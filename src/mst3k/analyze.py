@@ -96,6 +96,8 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         aseg = _seg(job, audio, start, end)
         if aseg is None:
             continue
+        if _is_speech(aseg, job["speech_noise_db"], job["speech_dur"]):
+            continue  # active dialogue — never riff over it
         mean_db = _rms_db(aseg)
         if mean_db is None:
             continue
@@ -139,8 +141,9 @@ def hot_moments(job: dict, audio: Path, k: int = 5) -> list[float]:
 
 
 def _astats(seg: Path):
-    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af", "astats=metadata=0",
-                           "-f", "null", "-"], capture_output=True, text=True)
+    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
+                           "astats=metadata=0", "-f", "null", "-"],
+                          capture_output=True, text=True)
     m1, m2 = re.findall(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr), \
              re.findall(r"Peak level dB:\s*(-?\d+\.\d+)", proc.stderr)
     if m1 and m2:
@@ -167,8 +170,9 @@ def _is_speech(seg: Path, noise_db: float, d: float) -> bool:
 
 
 def _rms_db(seg: Path) -> float | None:
-    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af", "astats=metadata=0",
-                           "-f", "null", "-"], capture_output=True, text=True)
+    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
+                           "astats=metadata=0", "-f", "null", "-"],
+                          capture_output=True, text=True)
     m = re.search(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr)
     return float(m.group(1)) if m else None
 
@@ -179,31 +183,25 @@ def _overlaps(sil_gaps, start, end, pad):
 
 
 def _spread(anchors, gap_sec, target):
-    """Keep highest-priority anchors (silence first), spaced ≥ gap_sec, padded to target."""
+    """Chronological scan picking up to 'target' anchors.
+    Silence gets picked when its time comes, moments when theirs do; no two
+    picks overlap and adjacent picks stay >= gap_sec from the prev pick."""
     if not anchors:
         return []
-    picked = [anchors[0]]
-    last = anchors[0]["start"]
-    for a in anchors[1:]:
-        if a["start"] - last >= gap_sec:
-            picked.append(a)
-            last = a["start"]
-    if len(picked) >= target:
-        return picked[:target]
-    # fill from remaining anchors between fixed anchors
-    remaining = [a for a in anchors if a not in picked]
-    for a in remaining:
-        inserted = False
-        for i, b in enumerate(picked + [None]):
-            lo = b["start"] if b else float("inf")
-            prev_start = picked[i - 1]["start"] if i > 0 else -1
-            if prev_start < a["start"] < lo:
-                picked.append(a)
-                picked.sort(key=lambda g: g["start"])
-                inserted = True
-                break
-        if inserted and len(picked) >= target:
+    picked = []
+    last_start = -float("inf")
+    for a in sorted(anchors, key=lambda a: a["start"]):
+        if len(picked) >= target:
             break
+        # an allowed pick as long as it doesn't overlap and is spaced
+        overlap = any(not (a["end"] <= p["start"] or a["start"] >= p["end"])
+                      for p in picked)
+        if overlap:
+            continue
+        if a["start"] - last_start < gap_sec:
+            continue
+        picked.append(a)
+        last_start = a["start"]
     return picked
 
 
