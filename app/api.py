@@ -116,15 +116,33 @@ async def run_job(jid: int) -> None:
             stdout=log, stderr=asyncio.subprocess.STDOUT, env=env)
         rc = await p.wait()
     # slug may have been changed to a title-based form after ingest;
-    # the on-disk artifacts live under whatever slug the CLI settled on.
-    video = next(job_dir.glob("*_riffed.mp4"), None)
-    srt   = next(job_dir.glob("*_riffs.srt"), None)
+    # either dir might hold artifacts. Walk both, keeping the original
+    # dir first so log text path resolution stays sane.
+    candidates = [job_dir]
+    marker = ROOT / "jobs" / f"{row['slug']}.renamed-from"
+    if marker.exists():
+        try:
+            candidates.insert(0, ROOT / "jobs" / marker.read_text().strip())
+        except Exception:
+            pass
+    else:
+        # also scan sibling headers — defensive when the marker write raced.
+        for p in ROOT.glob("jobs/*"):
+            if p.is_dir() and p.name != job_dir.name and p.name.startswith("https-youtu-be"):
+                if (p / "source.mp4").exists():
+                    candidates.append(p)
+    video = next((v for c in candidates for v in c.glob("*_riffed.mp4") if v.exists()), None)
+    srt   = next((s for c in candidates for s in c.glob("*_riffs.srt") if s.exists()), None)
     if rc == 0 and video and video.exists():
+        final_dir = video.parent
         _set(jid, status="done", video=str(video),
              srt=str(srt) if srt else None,
-             riffs=str(job_dir / "riffs.json"))
+             riffs=str(final_dir / "riffs.json"))
+        # update slug to the title one so list/detail follow the same naming
+        if final_dir.name != row["slug"]:
+            _set(jid, slug=final_dir.name)
     else:
-        err = logpath.read_text()[-4000:]
+        err = logpath.read_text()[-4000:] if logpath.exists() else "no log captured"
         _set(jid, status="failed", error=err)
 
 

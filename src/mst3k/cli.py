@@ -44,18 +44,19 @@ def cmd_render(args) -> None:
     title_slug = ingest.slugify(meta.get("title") or slug)
     if title_slug != slug:
         new_dir = job["jobs_dir"] / title_slug
-        if not new_dir.exists():
-            job_dir.rename(new_dir)
-            slug, job_dir = title_slug, new_dir
-            job["dir"] = job_dir
-            # Rebind source path — files inside moved with the dir
-            sp = Path(src)
-            if str(sp).startswith(str(job["jobs_dir"])):
-                job["source"] = job_dir / sp.name
-                src = job["source"]
-            # leave markers so the API's delete glob can find either dir
-            (job["jobs_dir"] / f"{slug}.renamed-from").write_text(str(job_dir.name))
-            (job["jobs_dir"] / f"{job_dir.name}.renamed-from").write_text(ingest.slugify(args.source))
+        if new_dir.exists():
+            import shutil; shutil.rmtree(new_dir)
+        job_dir.rename(new_dir)
+        slug, job_dir = title_slug, new_dir
+        job["dir"] = job_dir
+        # Rebind source path — files inside moved with the dir
+        sp = Path(src)
+        if str(sp).startswith(str(job["jobs_dir"])):
+            job["source"] = job_dir / sp.name
+            src = job["source"]
+        # leave markers so the API's delete glob can find either dir
+        (job["jobs_dir"] / f"{slug}.renamed-from").write_text(str(job_dir.name))
+        (job["jobs_dir"] / f"{job_dir.name}.renamed-from").write_text(ingest.slugify(args.source))
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 
