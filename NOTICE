@@ -1,0 +1,28 @@
+NOTICE
+======
+
+This project builds on several remarkable open-source projects:
+
+- PocketTTS (Kyutai) — text-to-speech
+  https://github.com/kyutai/pocket-tts
+- sherpa-onnx (k2-fsa) — speech recognition runtime
+  https://github.com/k2-fsa/sherpa-onnx
+- Parakeet TDT CTC 110M (NVIDIA) — ASR weights
+  https://huggingface.co/nvidia/parakeet-tdt_ctc-110m
+- yt-dlp — video download
+  https://github.com/yt-dlp/yt-dlp
+- FFmpeg — audio/video pipeline
+  https://ffmpeg.org/
+- FastAPI + Uvicorn — HTTP service
+  https://fastapi.tiangolo.com/
+
+Design lineage: a much-opinionated evolution of ideas sketched in
+  https://github.com/davidtkunz/movie-sign
+Which shows what happens when you let MST3K watch any movie. This project
+takes that basic observation and runs it through a real comedy pipeline —
+contextual transcript awareness, per-shot bundles, two-voice chemistry —
+so the riffs land like they were written by someone watching the movie.
+
+Voices are shipped as pre-built PocketTTS presets; each preset was bundled
+by the upstream PocketTTS project from public-domain LibriVox narration.
+The theater overlay is procedural / original, no copyrighted assets used.
