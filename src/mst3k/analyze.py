@@ -29,16 +29,22 @@ def find_gaps(job: dict) -> list[dict]:
     silence_ratio = sum(e - s for s, e in silence) / max(duration, 1e-6)
     enough = len(sil_gaps) >= job["target_riff_count"] * job["min_silence_frac"]
 
+    pool = job.get("window_pool_size", job["target_riff_count"] * 2)
+    gap_sec = max(duration / max(pool, 1), job["min_riff_space_sec"])
     if silence_ratio >= job["silence_ratio_ok"] and enough:
-        gaps = sil_gaps
+        gaps = sil_gaps[:pool]
+        if len(gaps) < pool:
+            # top up with moments in the dead stretches
+            moment_gaps = _detect_quiet_moments(audio, job)
+            filler = [g for g in moment_gaps
+                      if not _overlaps(gaps, g["start"], g["end"], 2.0)]
+            gaps = sorted(gaps + filler, key=lambda g: g["start"])[:pool]
     else:
         moment_gaps = _detect_quiet_moments(audio, job)
         anchors = sil_gaps + [g for g in moment_gaps
                               if not _overlaps(sil_gaps, g["start"], g["end"], 2.0)]
         anchors.sort(key=lambda g: g["start"])
-        gap_sec = max(duration / max(job["target_riff_count"], 1),
-                      job["min_riff_space_sec"])
-        gaps = _spread(anchors, gap_sec, job["target_riff_count"])
+        gaps = _spread(anchors, gap_sec, pool)
 
     for i, g in enumerate(gaps, 1):
         g["id"] = i
@@ -190,6 +196,29 @@ def find_cuts(job: dict, max_cuts: int = 400) -> list[float]:
                 break
     cache.write_text(json.dumps(cuts))
     return cuts
+
+
+def score_visual_interest(job: dict, gaps: list[dict]) -> None:
+    """Per-gap 0..1 visual-interest score (luma-variance proxy for busy-ness).
+    Lets the writer prioritize busy moments over static shots."""
+    raw = [_luma_variance(job["dir"] / "frames" / f"gap{g['id']:03d}.png")
+           for g in gaps]
+    mx = max(raw) if raw else 1.0
+    mx = mx if mx > 0 else 1.0
+    for g, v in zip(gaps, raw):
+        g["score"] = round((v or 0) / mx, 3)
+
+
+def _luma_variance(path: Path) -> float:
+    """Busier shots have higher luma variance at low res. 0 if unreadable."""
+    if not path.exists():
+        return 0.0
+    proc = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vf",
+                           "scale=64:36,format=gray,signalstats",
+                           "-f", "null", "-"],
+                          capture_output=True, text=True)
+    m = re.search(r"YAVG:([\d.]+)", proc.stderr)
+    return float(m.group(1)) if m else 0.0
 
 
 def grab_frames(job: dict, gaps: list[dict]) -> None:

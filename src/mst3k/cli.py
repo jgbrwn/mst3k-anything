@@ -38,6 +38,8 @@ def cmd_render(args) -> None:
         print("No usable riff windows (neither silence nor a quiet moment).")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
+    analyze.score_visual_interest(job, gaps)
+    (job_dir / "gaps.json").write_text(json.dumps(gaps, indent=2))
 
     # 3 understand
     profile = step("understand", lambda: understand.build_profile(job))
@@ -58,12 +60,26 @@ def cmd_render(args) -> None:
             if res and res["ok"]:
                 start = (g["start"] + job["margin"]) if g.get("at") == "gap_start" else (
                     (g["start"] + g["end"]) / 2 - res["duration"] / 2)
+                headroom = (g["end"] - start) - res["duration"]
                 out.append({**r, "start": round(start, 3),
-                            "wav": res["path"], "duration": res["duration"]})
+                            "wav": res["path"], "duration": res["duration"],
+                            "_headroom": round(headroom, 3), "_score": g.get("score", 0)})
             else:
                 print(f"    drop gap{r['gap']}: doesn't fit")
         return out
+
     placements = step("synthesize+fit", synth_all)
+    fit_note = f"{len(placements)}/{len(riffs)} riff{'s' if len(riffs) > 1 else ''} fit"
+    # over-generation: keep the target count, prefer snug fits + better moments
+    target = job["target_riff_count"]
+    if len(placements) > target:
+        ranked = sorted(placements, key=lambda p: (p["_headroom"], -p["_score"]))
+        dropped = {p["gap"] for p in ranked[target:]}
+        for p in placements:
+            if p["gap"] in dropped:
+                print(f"    cut gap{p['gap']}: over target")
+        placements = [p for p in placements if p["gap"] not in dropped]
+    print(f"    placed {len(placements)} of {len(riffs)} written ({fit_note})")
 
     # 6 theater overlay + mix
     step("overlay", lambda: theater.make_theater(job_dir / "theater.png", meta["width"]))
