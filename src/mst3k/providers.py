@@ -1,8 +1,8 @@
 """Multi-provider LLM routing.
 
 Configuration source order:
-1. request-time override {"provider": ..., "model": ...} -> job["llm"]
-2. config.llm_provider / llm_model
+1. process environment MST3K_PROVIDER / MST3K_MODEL (per-render API override)
+2. request-time override {"provider": ..., "model": ...} -> job["llm"]
 3. per-provider defaults table
 
 Each provider row carries base URL + model. The UI pulls this for the picker;
