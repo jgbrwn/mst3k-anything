@@ -1,0 +1,54 @@
+"""Config: defaults + .env overrides. All LLM/TTS/media knobs in one place."""
+import os
+from pathlib import Path
+
+from .llm import load_env
+
+BASE = Path(__file__).resolve().parents[2]
+
+DEFAULTS = {
+    # paths
+    "jobs_dir": BASE / "jobs",
+    "pocket_tts": BASE / "tts-venv/bin/pocket-tts",
+    # LLM (swappable via .env)
+    "llm_base": "https://hyper.charm.land/v1",
+    "llm_key": "",
+    "llm_model": "qwen3.8-flash",
+    "llm_understand_model": "qwen3.8-flash",
+    # voice (solo lineup for v1)
+    "voice_ref": None,          # optional public-domain wav to clone
+    "voice_rate": 1.0,
+    "voice_pitch": 0.0,         # semitones; e.g. +2 for puppet-y
+    "riff_gain": 1.4,
+    "duck_amount": 0.65,
+    # timing/comedy
+    "min_gap": 1.4,
+    "margin": 0.35,
+    "max_riff_seconds": 9.0,
+    "words_per_second": 2.6,
+    "max_tempo_stretch": 1.12,
+    "max_riffs": 400,
+    # media
+    "frame_width": 640,
+    "crf": 22,
+}
+
+
+def load() -> dict:
+    cfg = dict(DEFAULTS)
+    env = load_env()
+    if env.get("LLM_BASE_URL"): cfg["llm_base"] = env["LLM_BASE_URL"]
+    if env.get("LLM_API_KEY"): cfg["llm_key"] = env["LLM_API_KEY"]
+    if env.get("LLM_MODEL"): cfg["llm_model"] = env["LLM_MODEL"]
+    if env.get("LLM_UNDERSTAND_MODEL"): cfg["llm_understand_model"] = env["LLM_UNDERSTAND_MODEL"]
+    if env.get("VOICE_REF"): cfg["voice_ref"] = env["VOICE_REF"]
+    if env.get("VOICE_PITCH"):
+        try: cfg["voice_pitch"] = float(env["VOICE_PITCH"])
+        except ValueError: pass
+    if env.get("RIFT_GAIN"):
+        try: cfg["riff_gain"] = float(env["RIFT_GAIN"])
+        except ValueError: pass
+    # API key fallback to env var if .env empty
+    if not cfg["llm_key"]:
+        cfg["llm_key"] = os.environ.get("MST3K_API_KEY", "")
+    return cfg
