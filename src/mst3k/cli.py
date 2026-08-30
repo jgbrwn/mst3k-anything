@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import analyze, config as cfgmod, ingest, mix, theater, understand, voice, writer
+from . import analyze, config as cfgmod, ingest, mix, understand, voice, writer
 
 
 def cmd_render(args) -> None:
@@ -83,8 +83,7 @@ def cmd_render(args) -> None:
         placements = [p for p in placements if p["gap"] not in dropped]
     print(f"    placed {len(placements)} of {len(riffs)} written ({fit_note})")
 
-    # 6 theater overlay + mix
-    step("overlay", lambda: theater.make_theater(job_dir / "theater.png", meta["width"]))
+    # 6 mix (includes theater overlay: animated webm, PNG fallback, or none)
     built = step("mix", lambda: mix.build(job, placements))
 
     out_dir = Path(args.out).resolve() if args.out else job_dir

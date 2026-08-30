@@ -14,7 +14,8 @@ Return ONLY JSON:
   "tone": "one phrase describing the vibe",
   "premise": "1-2 sentences: what happens in this video",
   "targets": ["up to 5 concrete things ripe for riffing: editing, props, acting, claims, pacing, graphics..."],
-  "visual_gags": ["up to 3 things actually visible in the frames that are inherently funny"]
+  "visual_gags": ["up to 3 things actually visible in the frames that are inherently funny"],
+  "style_guide": "one sentence of riff-writing guidance tuned to this specific video's kind and content"
 }
 
 Be specific and concrete. No hedging, no disclaimers."""
