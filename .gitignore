@@ -1,6 +1,8 @@
-.env
-jobs/
-__pycache__/
 *.pyc
-tts-venv/
+.env
+__pycache__/
 app/data/
+asr-venv/
+jobs/
+models/
+tts-venv/
