@@ -50,14 +50,24 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict) -> list[dict]:
                    f"tone: {profile.get('tone')}\n"
                    f"premise: {profile.get('premise')}\n"
                    f"targets: {profile.get('targets')}")
+        if profile.get("style_guide"):
+            system += f"\nSTYLE GUIDE: {profile.get('style_guide')}"
+    hot_path = Path(job["dir"]) / "hot_moments.json"
+    if hot_path.exists():
+        hot = json.loads(hot_path.read_text())
+        if hot:
+            hits = [str(h) for h in hot]
+            system += ("\n\nHOT MOMENTS (audio suggests something dramatic happens here; "
+                       "the joke is stronger if it lands around these): " + ", ".join(hits) + "s")
     system += ('\n\nReturn ONLY a JSON array: '
                '[{"gap": <n>, "line": "..."}, ...] one entry per offered gap, '
                'in order. Empty string "" is allowed if no good riff exists.')
 
     user = []
     for g in gaps:
+        tag = f", score={g.get('score', 0):.2f}" if "score" in g else ""
         user.append({"type": "text", "text":
-            f"GAP {g['id']} at {g['start']}s ({g['usable']}s usable, "
+            f"GAP {g['id']} at {g['start']}s ({g['usable']}s usable{tag}, "
             f"budget {g['budget_words']} words). Frame:"})
         f = frames / f"gap{g['id']:03d}.png"
         if f.exists():

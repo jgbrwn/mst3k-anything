@@ -112,9 +112,40 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         usable = min(end - start, job["max_riff_seconds"])
         out.append({"id": 0, "start": round(start, 1), "end": round(end, 1),
                     "dur": round(end - start, 1), "usable": round(usable, 1),
-                    "kind": "moment", "at": "mid",
+                    "kind": "moment", "at": "mid", "quiet_db": round(db, 1),
                     "budget_words": max(2, int(usable * job["words_per_second"]))})
     return out
+
+
+def hot_moments(job: dict, audio: Path, k: int = 5) -> list[float]:
+    """Peak-arousal timestamps (budget-capped) so the writer treats them as
+    high-value riff candidates regardless of their quiet score."""
+    duration = job["meta"]["duration"]
+    win, hop = 1.6, 1.6
+    scored = []
+    for start in _frange(0.5, max(0.5, duration - win), hop):
+        end = min(start + win, duration)
+        aseg = _seg(job, audio, start, end)
+        if aseg is None:
+            continue
+        info = _astats(aseg)
+        if not info:
+            continue
+        mean_db, peak_db = info
+        arousal = peak_db - mean_db  # big transient = something happened
+        scored.append((arousal, start))
+    scored.sort(key=lambda x: -x[0])
+    return sorted(round(s, 1) for _a, s in scored[:k])
+
+
+def _astats(seg: Path):
+    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af", "astats=metadata=0",
+                           "-f", "null", "-"], capture_output=True, text=True)
+    m1, m2 = re.findall(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr), \
+             re.findall(r"Peak level dB:\s*(-?\d+\.\d+)", proc.stderr)
+    if m1 and m2:
+        return float(m1[-1]), float(m2[-1])
+    return None
 
 
 def _seg(job, audio: Path, start: float, end: float) -> Path | None:
