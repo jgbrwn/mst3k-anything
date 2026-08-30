@@ -84,7 +84,12 @@ def _normalize(job: dict, src: Path) -> tuple[Path, dict]:
         return out, _probe(out)
     meta = _probe(src)
     if src.suffix.lower() == ".mp4":
-        out.symlink_to(src.resolve())
+        # hard-link (same fs) so the dir can be renamed without breaking the
+        # descriptor; symlink breaks when the quoted directory moves.
+        try:
+            out.hardlink_to(src)
+        except OSError:
+            import shutil; shutil.copy2(src, out)
         return out, meta
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
