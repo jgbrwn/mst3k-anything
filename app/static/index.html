@@ -1,3 +1,24 @@
+.player-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:60;display:flex;align-items:center;justify-content:center}
+.player-overlay video{max-width:96vw;max-height:92vh}
+.player-close{position:absolute;top:.5rem;right:.5rem;font-size:2rem;color:#fff;background:none;border:none;cursor:pointer}
+@media(max-width:520px){.player-overlay video{max-width:100vw;max-height:88vh}}
+</style>
+<script>
+function playVideo(id){
+  closePlayer();
+  const div=document.createElement('div');
+  div.className='player-overlay'; div.id='playerOverlay';
+  div.innerHTML=`
+    <button class="player-close" onclick="closePlayer()" aria-label="Close">×</button>
+    <video controls autoplay playsinline src="/api/jobs/${id}/video"></video>`;
+  document.body.appendChild(div);
+}
+function closePlayer(){
+  const p=document.getElementById('playerOverlay'); if(p){p.querySelector('video').pause();p.remove();}
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
+</script>
+<style>
 <!doctype html>
 <html lang="en">
 <head>
@@ -101,7 +122,7 @@
   <div id="active"></div>
   <div class="hist"><h2>History</h2><div id="list"></div></div>
 </div>
-<script>
+<script>// player helpers wired above
 const listEl = document.getElementById('list');
 const activeEl = document.getElementById('active');
 const providerEl = document.getElementById('provider');
@@ -245,7 +266,8 @@ async function renderActive(id,d,token){
     html+=`<p class="hint">Drag the handle to compare the original and riffed video.</p>
       <div class="compare" id="cmp"><video controls muted src="/api/jobs/${id}/video" id="orig"></video>
       <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div><div class="handle" id="handle"></div></div>
-      <p><a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
+      <p><button class="btn2" onclick="playVideo(${id})">▶ Play</button>
+      <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
       <p class="hint">Re-edit the lines below (cheap re-render, keeps media):</p>
       <textarea id="riffsBox">${esc(value)}</textarea>
       <button class="btn2" id="rerenderBtn" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;

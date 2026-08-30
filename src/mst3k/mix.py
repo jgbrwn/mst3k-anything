@@ -65,11 +65,16 @@ def build(job: dict, placements: list[dict]) -> dict:
         inputs += ["-i", str(overlay_src)]
 
     parts = []
+    duration = job["meta"]["duration"]
     for i, p in enumerate(placements, start=1):
         delay_ms = int(p["start"] * 1000)
+        # apad + atrim forces the riff bus to span the whole timeline so amix
+        # doesn't treat EOF as a dropout, and the sidechaincompress sidechain
+        # always has input after the riff ends (fixes post-riff silence).
         parts.append(
             f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
-            f"adelay={delay_ms}|{delay_ms},volume={job['riff_gain']:.2f}[r{i}]")
+            f"adelay={delay_ms}|{delay_ms},apad,atrim=0:{duration:.3f},"
+            f"volume={job['riff_gain']:.2f}[r{i}]")
     # sidechain ducking: riffs (concatenated) drive a compressor that pushes
     # the original track down while a riff is active, then recovers smoothly
     riff_inputs = "".join(f"[r{i}]" for i in range(1, len(placements) + 1))
@@ -79,7 +84,7 @@ def build(job: dict, placements: list[dict]) -> dict:
     parts.append(f"[a1][sc_d]sidechaincompress=threshold=-30dB:ratio=6:attack=80:release=400:makeup=1.0[ducked]")
     parts.append(f"[ducked][sc_mix]amix=inputs=2:normalize=0[aout]")
     if overlay_src:
-        parts.append(f"[0:v][{tidx}:v]overlay=0:H-h[vout]")
+        parts.append(f"[0:v][{tidx}:v]overlay=0:H-h[vout]".replace("0:H-h", "(W-w)/2:H-h"))
 
     fc = ";".join(parts)
     cmd = ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", fc]
