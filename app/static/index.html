@@ -45,6 +45,17 @@
     font-family:ui-monospace,monospace; font-size:.85rem; margin-top:.6rem }
   .btn2 { background:#2a2a36; color:var(--ink); padding:.45rem .8rem;
     border-radius:6px; border:1px solid var(--line); cursor:pointer; font-size:.85rem }
+  .compare { position:relative; width:100%; margin:.8rem 0; user-select:none }
+  .compare video { display:block; width:100%; border-radius:8px }
+  .compare .after { position:absolute; inset:0; overflow:hidden }
+  .compare .after video { position:absolute; top:0; height:100%; width:100%;
+    clip-path: inset(0 0 0 50%); border-radius:0 }
+  .compare .handle { position:absolute; top:0; left:50%; width:3px; height:100%;
+    background:var(--amber); cursor:ew-resize; z-index:5 }
+  .compare .handle::after { content:'⇆'; position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%); background:var(--amber); color:#1a1208;
+    border-radius:50%; width:28px; height:28px; display:flex; align-items:center;
+    justify-content:center; font-size:.9rem }
   .hist h2 { font-family:Georgia,serif; font-size:1.1rem; color:var(--dim);
     margin:1.6rem 0 .6rem }
   .row { display:flex; justify-content:space-between; align-items:center;
@@ -107,12 +118,19 @@ async function renderActive(id,d){
   if (d.stage && d.status==='running') html += `<div class="stage">▸ ${esc(d.stage)}</div>`;
   if (d.status==='done'){
     const riffs = await (await fetch(`/api/jobs/${id}/riffs`)).json();
-    html += `<video controls src="/api/jobs/${id}/video"></video>` +
-      `<p><a class="dl" href="/api/jobs/${id}/video" download>download mp4</a>` +
-      `<a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>` +
-      `<p style="color:var(--dim);font-size:.85rem">Re-edit the lines below (cheap re-render, keeps media):</p>` +
-      `<textarea id="riffsBox">${esc(JSON.stringify(riffs, null, 2))}</textarea>` +
-      `<button class="btn2" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
+    html += `
+      <label style="color:var(--dim);font-size:.85rem">Drag the handle right to leave the riff over the original:</label>
+      <div class="compare" id="cmp">
+        <video controls muted src="/api/jobs/${id}/video" style="position:relative" id="orig"></video>
+        <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div>
+        <div class="handle" id="handle"></div>
+      </div>
+      <p style="color:var(--dim);font-size:.85rem">
+      <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a>
+      <a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
+      <p style="color:var(--dim);font-size:.85rem">Re-edit the lines below (cheap re-render, keeps media):</p>
+      <textarea id="riffsBox">${esc(JSON.stringify(riffs, null, 2))}</textarea>
+      <button class="btn2" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
   }
   if (d.status==='failed'){
     const j = await (await fetch(`/api/jobs/${id}`)).json();
@@ -128,6 +146,32 @@ async function rerender(id){
   if(!r.ok){ alert('Invalid JSON: '+await r.text()); return; }
   track(id);
 }
+
+// drag the handle: pointer events, sync via requestAnimationFrame against the
+// riff (right) video currentTime so original stays in lockstep
+document.addEventListener('pointermove', e=>{
+  const cmp = document.getElementById('cmp');
+  if(!cmp || !window._drag) return;
+  const r = cmp.getBoundingClientRect();
+  let x = Math.max(0, Math.min(r.width, e.clientX - r.left));
+  document.getElementById('handle').style.left = x + 'px';
+  const pct = (x / r.width) * 100;
+  cmp.querySelector('.after video').style.clipPath = `inset(0 0 0 ${pct}%)`;
+});
+document.addEventListener('pointerdown', e=>{
+  if (e.target.id==='handle' || e.target.id==='cmp') window._drag = true;
+});
+document.addEventListener('pointerup', ()=>{ window._drag = false; });
+
+// keep left vid in sync with the right
+setInterval(()=>{
+  const o = document.getElementById('orig'), r = document.getElementById('riff');
+  if(o && r && Math.abs(o.currentTime - r.currentTime) > 0.1){
+    o.currentTime = r.currentTime;
+    if(o.paused && !r.paused) o.play();
+    if(!o.paused && r.paused) o.pause();
+  }
+}, 120);
 
 loadHistory();
 </script>
