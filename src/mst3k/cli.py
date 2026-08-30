@@ -38,11 +38,11 @@ def cmd_render(args) -> None:
         print("No usable riff windows (neither silence nor a quiet moment).")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
-    step("context frames", lambda: context.grab_context_frames(job, gaps))
     analyze.score_visual_interest(job, gaps)
     hot = analyze.hot_moments(job, job["dir"] / "audio.wav")
     (job_dir / "gaps.json").write_text(json.dumps(gaps, indent=2))
     (job_dir / "hot_moments.json").write_text(json.dumps(hot, indent=2))
+    step("context frames", lambda: context.grab_context_frames(job, gaps, hot))
 
     # 2b transcribe + bundles
     asr = step("transcribe", lambda: transcribe.transcribe(job))
