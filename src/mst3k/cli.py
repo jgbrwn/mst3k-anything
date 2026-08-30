@@ -67,11 +67,21 @@ def cmd_render(args) -> None:
                 continue
             res = voice.synthesize(job, {**r, "_gap": g})
             if res and res["ok"]:
-                start = (g["start"] + job["margin"]) if g.get("at") == "gap_start" else (
-                    (g["start"] + g["end"]) / 2 - res["duration"] / 2)
-                headroom = (g["end"] - start) - res["duration"]
+                dur = res["duration"]
+
+                # when-hint: writer-specified placement intent
+                when = r.get("when", 0.0)
+                if isinstance(when, (int, float)) and abs(when) > 0.05:
+                    start = g["start"] + max(0.0, when)
+                    if start + dur > g["end"] + 0.05:
+                        # writer's intent doesn't fit — fall through to mid/gap_start
+                        when = 0.0
+                if not isinstance(when, (int, float)) or abs(when) <= 0.05:
+                    start = (g["start"] + job["margin"]) if g.get("at") == "gap_start" else (
+                        (g["start"] + g["end"]) / 2 - dur / 2)
+                headroom = (g["end"] - start) - dur
                 out.append({**r, "start": round(start, 3),
-                            "wav": res["path"], "duration": res["duration"],
+                            "wav": res["path"], "duration": dur,
                             "_headroom": round(headroom, 3), "_score": g.get("score", 0)})
             else:
                 print(f"    drop gap{r['gap']}: doesn't fit")

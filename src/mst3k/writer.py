@@ -100,8 +100,14 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict,
             system += ("\n\nHOT MOMENTS (audio suggests something dramatic happens here; "
                        "the joke is stronger if it lands around these): " + ", ".join(hits) + "s")
     system += ('\n\nReturn ONLY a JSON array: '
-               '[{"gap": <n>, "line": "..."}, ...] one entry per offered gap, '
-               'in order. Empty string "" is allowed if no good riff exists.')
+               '[{"gap": <n>, "line": "...", "when": <offset_seconds_from_gap_start>}, ...]\n'
+               '- one entry per offered gap, in order (empty line "" means no good riff)\n'
+               '- when: when the riff should START relative to the gap window\n'
+               '  - 0.0 = gap start\n'
+               '  - plain number = offset seconds from gap start (must be >=0)\n'
+               '  - negative = riff before a late pause (e.g. riff the *setup*, not after)\n'
+               'The pipeline may nudge `when` slightly to fit the window; you\n'
+               'are deciding the *intent*, not the exact millisecond.')
 
     user = []
     if bundles:
@@ -146,8 +152,13 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict,
         line = (r.get("line") or "").strip()
         words = len(line.split())
         if line and words <= budget_for(gaps, r.get("gap")):
+            when = r.get("when", 0.0)
+            try:
+                when = float(when)
+            except (TypeError, ValueError):
+                when = 0.0
             out.append({"gap": int(r["gap"]), "speaker": "riffer",
-                        "line": line, "words": words})
+                        "line": line, "words": words, "when": when})
     cache.write_text(json.dumps(out, indent=2))
     return out
 
