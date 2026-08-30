@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=exedev
 WorkingDirectory=/home/exedev/mst3k-anything
+EnvironmentFile=-/home/exedev/mst3k-anything/.env
 Environment=PYTHONPATH=/home/exedev/mst3k-anything/src
 ExecStart=/home/exedev/mst3k-anything/web-venv/bin/python3 -m uvicorn app.api:app --app-dir /home/exedev/mst3k-anything --host 0.0.0.0 --port 8000
 Restart=always

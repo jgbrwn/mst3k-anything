@@ -55,6 +55,19 @@ DEFAULTS = {
 def load() -> dict:
     cfg = dict(DEFAULTS)
     env = load_env()
+
+    # provider-specific (survives reboot; pdb precedence over tmp files)
+    prov_env = [
+        ("hyper",   "HYPER_BASE_URL",   "HYPER_API_KEY",   "HYPER_WRITER_MODEL"),
+        ("neuralwatt", "NEURALWATT_BASE_URL", "NEURALWATT_API_KEY", "NEURALWATT_WRITER_MODEL"),
+        ("openrouter", "OPENROUTER_BASE_URL", "OPENROUTER_API_KEY", "OPENROUTER_WRITER_MODEL"),
+    ]
+    for pid, burl, bkey, bmodel in prov_env:
+        if env.get(burl): cfg[f"{pid}_base"] = env[burl]
+        if env.get(bkey): cfg[f"{pid}_key"] = env[bkey]
+        if env.get(bmodel): cfg[f"{pid}_model"] = env[bmodel]
+
+    # legacy aliases (existing .env's still work)
     if env.get("LLM_BASE_URL"): cfg["llm_base"] = env["LLM_BASE_URL"]
     if env.get("LLM_API_KEY"): cfg["llm_key"] = env["LLM_API_KEY"]
     if env.get("LLM_MODEL"): cfg["llm_model"] = env["LLM_MODEL"]
@@ -66,7 +79,4 @@ def load() -> dict:
     if env.get("RIFT_GAIN"):
         try: cfg["riff_gain"] = float(env["RIFT_GAIN"])
         except ValueError: pass
-    # API key fallback to env var if .env empty
-    if not cfg["llm_key"]:
-        cfg["llm_key"] = os.environ.get("MST3K_API_KEY", "")
     return cfg

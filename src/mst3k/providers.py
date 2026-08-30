@@ -22,7 +22,16 @@ def _read(path: str):
 
 
 def load_providers() -> dict:
-    """api keys sourced from .env or /tmp/*_api_key (temporary demo)."""
+    """Map of provider id -> {base_url, key, default_model, supports_vision}.
+
+    Configuration source order (per provider):
+      HYPER_BASE_URL / HYPER_API_KEY / HYPER_WRITER_MODEL
+      NEURALWATT_BASE_URL / NEURALWATT_API_KEY / NEURALWATT_WRITER_MODEL
+      OPENROUTER_BASE_URL / OPENROUTER_API_KEY / OPENROUTER_WRITER_MODEL
+
+    Falls back to the legacy LLM_* names (still supported so existing .env's
+    keep working) and then /tmp/*_api_key as a developer shortcut.
+    """
     env = {}
     envf = ROOT / ".env"
     if envf.exists():
@@ -34,21 +43,21 @@ def load_providers() -> dict:
             env[k.strip()] = v.strip().strip('"').strip("'")
     return {
         "hyper": {
-            "base_url": env.get("LLM_BASE", "https://hyper.charm.land/v1"),
-            "key": env.get("LLM_API_KEY") or _read("/tmp/hyper_api_key"),
-            "default_model": env.get("LLM_MODEL", "qwen3.8-flash"),
+            "base_url": env.get("HYPER_BASE_URL") or env.get("LLM_BASE", "https://hyper.charm.land/v1"),
+            "key": env.get("HYPER_API_KEY") or env.get("LLM_API_KEY") or _read("/tmp/hyper_api_key"),
+            "default_model": env.get("HYPER_WRITER_MODEL") or env.get("LLM_MODEL", "qwen3.8-flash"),
             "supports_vision": True,
         },
         "neuralwatt": {
-            "base_url": "https://api.neuralwatt.com/v1",
-            "key": _read("/tmp/neuralwatt_api_key"),
-            "default_model": "kimi-k3-fast",
+            "base_url": env.get("NEURALWATT_BASE_URL", "https://api.neuralwatt.com/v1"),
+            "key": env.get("NEURALWATT_API_KEY") or _read("/tmp/neuralwatt_api_key"),
+            "default_model": env.get("NEURALWATT_WRITER_MODEL", "kimi-k3-fast"),
             "supports_vision": True,
         },
         "openrouter": {
-            "base_url": "https://openrouter.ai/api/v1",
-            "key": _read("/tmp/openrouter_api_key"),
-            "default_model": env.get("OR_MODEL"),   # UI replaces
+            "base_url": env.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            "key": env.get("OPENROUTER_API_KEY") or _read("/tmp/openrouter_api_key"),
+            "default_model": env.get("OPENROUTER_WRITER_MODEL"),   # UI replaces
             "supports_vision": True,
         },
     }
