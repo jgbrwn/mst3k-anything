@@ -85,9 +85,9 @@ def _detect_silence(audio: Path, min_gap: float) -> list[tuple]:
 
 
 def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
-    """Quiet/lull windows via speech gate + astats low-RMS ranking. Windows that
-    survive the gate (not active dialogue) can be riffed over (ducking applies);
-    active dialogue cannot."""
+    """Quiet/lull windows, ranked by astats. Never over *loud* dialogue;
+    constant-volume content (commercials, music) falls back to the relatively
+    calmest windows so the pipeline still produces riffs. Ducking still applies."""
     duration = job["meta"]["duration"]
     win, hop = job["moment_win_sec"], job["moment_hop_sec"]
     scored = []
@@ -96,15 +96,19 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         aseg = _seg(job, audio, start, end)
         if aseg is None:
             continue
-        if _is_speech(aseg, job["speech_noise_db"], job["speech_dur"]):
-            continue  # active dialogue — skip
         mean_db = _rms_db(aseg)
         if mean_db is None:
             continue
         scored.append((mean_db, start, end))
+    if len(scored) < 3:
+        return []
     scored.sort(key=lambda x: x[0])
+    median_db = scored[len(scored) // 2][0]
+    cutoff_db = median_db + job["moment_relax_db"]
     out = []
-    for _db, start, end in scored:
+    for db, start, end in scored:
+        if db > cutoff_db:
+            break  # loud enough that the riff would be buried — skip
         usable = min(end - start, job["max_riff_seconds"])
         out.append({"id": 0, "start": round(start, 1), "end": round(end, 1),
                     "dur": round(end - start, 1), "usable": round(usable, 1),

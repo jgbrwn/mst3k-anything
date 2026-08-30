@@ -38,6 +38,7 @@ DEFAULTS = {
     "speech_noise_db": "-35dB",
     "speech_dur": 0.3,
     "min_riff_space_sec": 10.0,
+    "moment_relax_db": 10.0,         # riff at most (median + this) dB
     # media
     "frame_width": 640,
     "crf": 22,
