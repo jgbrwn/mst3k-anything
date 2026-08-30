@@ -26,7 +26,7 @@ DEFAULTS = {
     "riff_gain": 1.4,
     "duck_amount": 0.65,
     # timing/comedy
-    "min_gap": 1.4,
+    "min_gap": 0.8,
     "margin": 0.35,
     "lead_in_sec": 4.0,              # don't riff in the first N sec (titles/logos)
     "max_riff_seconds": 9.0,
@@ -35,15 +35,16 @@ DEFAULTS = {
     "max_riffs": 400,
     # riff-window detection
     "target_riff_count": 6,          # final output cap
-    "window_pool_size": 12,           # candidates offered to the writer (~target * 2)
+    "window_pool_size": 16,           # candidates offered to the writer (~target * 2)
     "silence_ratio_ok": 0.04,
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
     "moment_hop_sec": 1.2,
-    "speech_noise_db": "-35dB",
-    "speech_dur": 0.3,
+    "speech_noise_db": "-42dB",       # audible-speech gate for moment rejection
+    "speech_dur": 0.2,                # even 200ms at this level = audible
     "min_riff_space_sec": 10.0,
-    "moment_relax_db": 10.0,         # riff at most (median + this) dB
+    "moment_relax_db": 3.0,          # moments must be *quieter* than median, not just not-loud
+    "max_speech_frac": 0.30,          # reject moment windows >30% spoken         # riff at most (median + this) dB
     # media
     "frame_width": 640,
     "crf": 22,

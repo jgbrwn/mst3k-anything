@@ -26,25 +26,11 @@ def find_gaps(job: dict) -> list[dict]:
     silence = _detect_silence(audio, job["min_gap"])
     sil_gaps = [g for g in (_mk_gap(job, s, e) for s, e in silence) if g]
 
-    silence_ratio = sum(e - s for s, e in silence) / max(duration, 1e-6)
-    enough = len(sil_gaps) >= job["target_riff_count"] * job["min_silence_frac"]
-
     pool = job.get("window_pool_size", job["target_riff_count"] * 2)
     gap_sec = max(duration / max(pool, 1), job["min_riff_space_sec"])
-    if silence_ratio >= job["silence_ratio_ok"] and enough:
-        gaps = sil_gaps[:pool]
-        if len(gaps) < pool:
-            # top up with moments in the dead stretches
-            moment_gaps = _detect_quiet_moments(audio, job)
-            filler = [g for g in moment_gaps
-                      if not _overlaps(gaps, g["start"], g["end"], 2.0)]
-            gaps = sorted(gaps + filler, key=lambda g: g["start"])[:pool]
-    else:
-        moment_gaps = _detect_quiet_moments(audio, job)
-        anchors = sil_gaps + [g for g in moment_gaps
-                              if not _overlaps(sil_gaps, g["start"], g["end"], 2.0)]
-        anchors.sort(key=lambda g: g["start"])
-        gaps = _spread(anchors, gap_sec, pool)
+    # With this configuration we trust silence only; quiet-moment fallbacks
+    # have repeatedly produced riffs competing with actual dialogue.
+    gaps = sil_gaps[:pool]
 
     for i, g in enumerate(gaps, 1):
         g["id"] = i
@@ -66,9 +52,9 @@ def _mk_gap(job, start, end):
             "budget_words": max(2, int(usable * job["words_per_second"]))}
 
 
-def _detect_silence(audio: Path, min_gap: float) -> list[tuple]:
+def _detect_silence(audio: Path, min_gap: float, gate_db: str = "-40dB") -> list[tuple]:
     proc = subprocess.run(["ffmpeg", "-i", str(audio), "-af",
-                           "silencedetect=noise=-35dB:d=1.0", "-f", "null", "-"],
+                           f"silencedetect=noise={gate_db}:d=0.6", "-f", "null", "-"],
                           capture_output=True, text=True)
     starts, ends = [], []
     for line in proc.stderr.splitlines():
@@ -84,10 +70,10 @@ def _detect_silence(audio: Path, min_gap: float) -> list[tuple]:
     return out
 
 
+
 def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
-    """Quiet/lull windows, ranked by astats. Never over *loud* dialogue;
-    constant-volume content (commercials, music) falls back to the relatively
-    calmest windows so the pipeline still produces riffs. Ducking still applies."""
+    """Quiet/lull windows: scan RMS once per window via the cached seg
+    mechanism, sort calmest-first, then speech-gate only the calmest few."""
     duration = job["meta"]["duration"]
     win, hop = job["moment_win_sec"], job["moment_hop_sec"]
     lead = job.get("lead_in_sec", 0.5)
@@ -97,21 +83,24 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         aseg = _seg(job, audio, start, end)
         if aseg is None:
             continue
-        if _is_speech(aseg, job["speech_noise_db"], job["speech_dur"]):
-            continue  # active dialogue — never riff over it
         mean_db = _rms_db(aseg)
         if mean_db is None:
             continue
         scored.append((mean_db, start, end))
     if len(scored) < 3:
         return []
-    scored.sort(key=lambda x: x[0])
-    median_db = scored[len(scored) // 2][0]
-    cutoff_db = median_db + job["moment_relax_db"]
+    scored.sort(key=lambda x: x[0])  # calmest first
+    cutoff_db = scored[len(scored) // 2][0] + job["moment_relax_db"]
     out = []
     for db, start, end in scored:
         if db > cutoff_db:
-            break  # loud enough that the riff would be buried — skip
+            break
+        aseg = _seg(job, audio, start, end)
+        if aseg is None:
+            continue
+        if _speech_frac(aseg, job["speech_noise_db"], job["speech_dur"],
+                        end - start) > job.get("max_speech_frac", 0.30):
+            continue
         usable = min(end - start, job["max_riff_seconds"])
         out.append({"id": 0, "start": round(start, 1), "end": round(end, 1),
                     "dur": round(end - start, 1), "usable": round(usable, 1),
@@ -163,11 +152,32 @@ def _seg(job, audio: Path, start: float, end: float) -> Path | None:
     return cache
 
 
-def _is_speech(seg: Path, noise_db: float, d: float) -> bool:
+
+
+def _speech_frac(seg: Path, gate_db: str, min_sil_dur: float, win: float) -> float:
+    """Fraction of `seg` that is above `gate_db` (speech/music intensity),
+    measured via silencedetect + silence-fraction. Robust against the old
+    binary check that falsely cleared dialogue windows when the gate was too
+    strict."""
     proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
-                           f"silencedetect=noise={noise_db}:d={d}", "-f", "null", "-"],
-                          capture_output=True, text=True)
-    return "silence_start" not in proc.stderr  # sound above gate => speech
+                           f"silencedetect=noise={gate_db}:d={min_sil_dur}",
+                           "-f", "null", "-"], capture_output=True, text=True)
+    starts, ends = [], []
+    for l in proc.stderr.splitlines():
+        if "silence_start:" in l:
+            starts.append(float(l.split("silence_start:")[1].split()[0]))
+        if "silence_end:" in l and "silence_duration:" in l:
+            toks = l.split()
+            i = toks.index("silence_end:")
+            ends.append(float(toks[i + 1]))
+    if not starts:
+        return 1.0
+    if len(ends) < len(starts):
+        ends.append(win)
+    sil = 0.0
+    for s, e in zip(starts, ends):
+        sil += max(0.0, min(e, win) - max(s, 0.0))
+    return max(0.0, 1.0 - (sil / win))
 
 
 def _rms_db(seg: Path) -> float | None:
