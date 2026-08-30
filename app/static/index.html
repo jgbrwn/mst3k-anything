@@ -80,10 +80,17 @@
   <form id="f">
     <input id="src" type="url" required placeholder="https://youtube.com/watch?v=…" aria-label="Video URL">
     <select id="provider" aria-label="LLM provider"></select>
+    <select id="judgeProvider" aria-label="Judge LLM provider">
+      <option value="">Judge = same as writer</option>
+    </select>
     <button id="submitBtn" type="submit">🎬 Riff it</button>
     <div id="modelWrap" class="model-wrap">
       <input id="orModel" list="orModels" placeholder="OpenRouter model (provider/model)" aria-label="OpenRouter model">
       <datalist id="orModels"></datalist>
+    </div>
+    <div id="judgeModelWrap" class="model-wrap">
+      <input id="orJudgeModel" list="orJudgeModels" placeholder="OpenRouter judge model (provider/model)" aria-label="OpenRouter judge model">
+      <datalist id="orJudgeModels"></datalist>
     </div>
   </form>
   <div id="pickerNote" class="picker-note"></div>
@@ -94,8 +101,11 @@
 const listEl = document.getElementById('list');
 const activeEl = document.getElementById('active');
 const providerEl = document.getElementById('provider');
+const judgeProviderEl = document.getElementById('judgeProvider');
 const modelWrap = document.getElementById('modelWrap');
+const judgeModelWrap = document.getElementById('judgeModelWrap');
 const orModelEl = document.getElementById('orModel');
+const orJudgeModelEl = document.getElementById('orJudgeModel');
 const pickerNote = document.getElementById('pickerNote');
 let providers = [], jobs = [], activeId = null, trackToken = 0, orLoaded = false;
 
@@ -116,14 +126,18 @@ async function loadProviders(){
   const r=await fetch('/api/providers');
   if(!r.ok) throw new Error(await r.text());
   providers=(await r.json()).providers || [];
-  providerEl.innerHTML=providers.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
-  providerEl.value='hyper'; updateProviderUI();
+  const opts=providers.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  providerEl.innerHTML=opts;
+  judgeProviderEl.innerHTML='<option value="">Judge = same as writer</option>'+opts;
+  providerEl.value='hyper';
+  updateProviderUI();
 }
 async function updateProviderUI(){
   const p=providerFor(providerEl.value);
   const isOr=providerEl.value==='openrouter'; modelWrap.classList.toggle('show',isOr);
+  const jisOr=judgeProviderEl.value==='openrouter'; judgeModelWrap.classList.toggle('show',jisOr);
   pickerNote.textContent=isOr ? 'Choose a model by name, or type a provider/model id.' :
-    (p.model ? `Model: ${p.model} · ${p.base}` : '');
+    (p.model ? `Writer: ${p.model} · ${p.base}` : '');
   if(isOr && !orLoaded){
     pickerNote.textContent='Loading OpenRouter models…';
     try {
@@ -132,11 +146,14 @@ async function updateProviderUI(){
       const models=await r.json();
       document.getElementById('orModels').innerHTML=models.map(m=>
         `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
+      document.getElementById('orJudgeModels').innerHTML=models.map(m=>
+        `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
       orLoaded=true; pickerNote.textContent=`${models.length} OpenRouter models · type to filter or enter an id.`;
     } catch(e) { pickerNote.textContent='OpenRouter model list unavailable; type a provider/model id.'; }
   }
 }
 providerEl.addEventListener('change',updateProviderUI);
+judgeProviderEl.addEventListener('change',updateProviderUI);
 
 async function loadHistory(){
   const r=await fetch('/api/jobs'); if(!r.ok) return;
@@ -146,7 +163,7 @@ async function loadHistory(){
     const terminal=j.status==='done'||j.status==='failed';
     return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
       <div class="title" title="${esc(j.source)}">${esc(titleFor(j.source))}</div>
-      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}</div>
+      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}${j.judge_provider?' · judge on '+esc(j.judge_provider):''}</div>
     </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
       <button class="btn2" onclick="track(${j.id})">View</button>
       <button class="btn2" onclick="hideJob(${j.id})">Hide</button>
@@ -161,6 +178,10 @@ document.getElementById('f').addEventListener('submit',async e=>{
   const src=document.getElementById('src').value.trim(), provider=providerEl.value;
   const body={url:src,provider};
   if(provider==='openrouter' && orModelEl.value.trim()) body.model=orModelEl.value.trim();
+  // optional judge override
+  const jp=judgeProviderEl.value;
+  if(jp){ body.judge_provider=jp; }
+  if(jp==='openrouter' && orJudgeModelEl.value.trim()) body.judge_model=orJudgeModelEl.value.trim();
   const btn=document.getElementById('submitBtn'); btn.disabled=true;
   try {
     const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

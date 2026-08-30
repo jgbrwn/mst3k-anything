@@ -87,9 +87,9 @@ def b64_image(path) -> str:
 
 # ---- module-level helpers used by the pipeline stages -----------------
 
-def _client(job: dict) -> "LLM":
+def _client(job: dict, role: str = "write") -> "LLM":
     from . import providers
-    r = providers.resolve(job)
+    r = providers.resolve(job, role=role)
     return LLM(r["base_url"], r["key"], job.get("_model") or r["model"])
 
 
@@ -107,9 +107,10 @@ def chat(job: dict, system: str, user, temperature: float = 0.9,
 
 
 def chat_json(job: dict, system: str, user, temperature: float = 0.9,
-              max_tokens: int = 2000, model: str | None = None):
+              max_tokens: int = 2000, model: str | None = None,
+              role: str = "write"):
     job["_model"] = model
-    client = _client(job)
+    client = _client(job, role=role)
     try:
         return client.chat_json(
             [{"role": "system", "content": system},

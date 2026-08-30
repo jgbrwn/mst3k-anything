@@ -89,16 +89,23 @@ def openrouter_models(ttl_sec: int = 3600, min_context: int = 128_000,
     return kept
 
 
-def resolve(job: dict) -> dict:
-    """Return the {base_url, key, model} for this job.
+def resolve(job: dict, role: str = "write") -> dict:
+    """Return the {base_url, key, model} for this job and role.
 
-    Explicit process environment overrides are used by the API worker for a
-    single render, then request/job fields, then provider defaults.
+    Roles: "write" (default), "judge" (QA pass), "understand", "transcribe".
+    Per-role overrides:
+    - env MST3K_JUDGE_PROVIDER / MST3K_JUDGE_MODEL > env MST3K_PROVIDER/MODEL
+    - job["judge_provider"] / job["judge_model"] > job-level provider/model
+    - the role falls back to the main provider/model otherwise.
     """
-    prov = (os.environ.get("MST3K_PROVIDER") or
-            job.get("llm_provider") or job.get("provider") or "hyper")
-    override_mod = (os.environ.get("MST3K_MODEL") or
-                    job.get("llm_model") or job.get("model"))
+    prov = (os.environ.get(f"MST3K_{role.upper()}_PROVIDER") or
+            os.environ.get("MST3K_PROVIDER") or
+            job.get(f"{role}_provider") or job.get("llm_provider") or
+            job.get("provider") or "hyper")
+    override_mod = (os.environ.get(f"MST3K_{role.upper()}_MODEL") or
+                    os.environ.get("MST3K_MODEL") or
+                    job.get(f"{role}_model") or job.get("llm_model") or
+                    job.get("model"))
     table = load_providers()
     row = table.get(prov)
     if not row or not row.get("key"):

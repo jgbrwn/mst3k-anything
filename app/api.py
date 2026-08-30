@@ -48,7 +48,8 @@ def init_db() -> None:
       );
     """)
     # Keep existing databases compatible with the current job shape.
-    for column in ("provider TEXT", "model TEXT", "hidden INTEGER DEFAULT 0"):
+    for column in ("provider TEXT", "model TEXT", "hidden INTEGER DEFAULT 0",
+                   "judge_provider TEXT", "judge_model TEXT"):
         try:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {column}")
         except sqlite3.OperationalError:
@@ -87,6 +88,11 @@ async def run_job(jid: int) -> None:
         env["MST3K_PROVIDER"] = row["provider"]
     if row["model"]:
         env["MST3K_MODEL"] = row["model"]
+    # optional per-role judge override (separate picker in UI)
+    if row.get("judge_provider"):
+        env["MST3K_JUDGE_PROVIDER"] = row["judge_provider"]
+    if row.get("judge_model"):
+        env["MST3K_JUDGE_MODEL"] = row["judge_model"]
     with open(logpath, "w") as log:
         p = await asyncio.create_subprocess_exec(
             PE, "-m", "mst3k.cli", "render", row["source"],
@@ -152,14 +158,24 @@ async def create_job(req: Request):
         model = model.strip() or None
     if provider == "openrouter" and model and "/" not in model:
         raise HTTPException(400, "OpenRouter model must include a provider slash (provider/model)")
+
+    # optional judge override
+    jprov = (body.get("judge_provider") or "").strip() or None
+    jmodel = (body.get("judge_model") or "").strip() or None
+    if jprov is not None and jprov not in allowed:
+        raise HTTPException(400, "judge_provider must be hyper, neuralwatt, or openrouter")
+    if jprov == "openrouter" and jmodel and "/" not in jmodel:
+        raise HTTPException(400, "OpenRouter judge_model must be provider/model")
+
     from mst3k.ingest import slugify
     slug = slugify(src)
     now = time.time()
     con = db()
     cur = con.execute(
-        "INSERT INTO jobs(source, slug, status, created, updated, provider, model) "
-        "VALUES(?,?, 'queued', ?, ?, ?, ?)",
-        (src, slug, now, now, provider, model))
+        "INSERT INTO jobs(source, slug, status, created, updated, provider, model, "
+        "judge_provider, judge_model) "
+        "VALUES(?,?, 'queued', ?, ?, ?, ?, ?, ?)",
+        (src, slug, now, now, provider, model, jprov, jmodel))
     jid = cur.lastrowid; con.commit(); con.close()
     _proc.put(jid)
     return {"id": jid, "slug": slug, "status": "queued", "provider": provider, "model": model}
@@ -180,7 +196,8 @@ def get_job(jid: int):
 def list_jobs():
     con = db()
     rows = con.execute(
-        "SELECT id, source, status, created, updated, provider, model "
+        "SELECT id, source, status, created, updated, provider, model, "
+        "judge_provider, judge_model "
         "FROM jobs WHERE COALESCE(hidden, 0)=0 ORDER BY id DESC LIMIT 50").fetchall()
     con.close()
     return [dict(r) for r in rows]

@@ -74,11 +74,51 @@ def _bundle_to_user(bundle: dict, prev_riff: str):
     return parts
 
 
-def write_riffs(job: dict, gaps: list[dict], profile: dict,
-                bundles: list[dict] | None = None) -> list[dict]:
-    cache = job["dir"] / "riffs.json"
-    if cache.exists():
-        return json.loads(cache.read_text())
+def write_riffs_with_review(job: dict, gaps: list[dict], profile: dict,
+                             bundles: list[dict] | None = None) -> list[dict]:
+    """Two-pass write: draft -> judge -> rewrite rejected lines (once)."""
+    from . import judge
+    drafts = _write_drafts(job, gaps, profile, bundles,
+                          critique_context="")
+    verdicts = judge.judge_riffs(job, drafts, bundles or [])
+    out = []
+    for d, v in zip(drafts, verdicts):
+        if v.get("verdict") == "rewrite" and (v.get("critique") or ""):
+            rewrite = _write_drafts(job, gaps, profile, bundles,
+                                    critique_context=_critique_for(d, v, bundles), )
+            # pick the rewrite matching this gap if produced, else drop
+            match = next((rw for rw in rewrite if rw["gap"] == d["gap"]), None)
+            if match:
+                out.append(match)
+                continue
+        out.append(d)
+    return out
+
+
+def _critique_for(riff: dict, verdict: dict, bundles: list) -> str:
+    """Build the director's-note context for one rewrite attempt."""
+    g = next((b["gap"] for b in (bundles or []) if b["gap"]["id"] == riff["gap"]), {})
+    b = next((b for b in (bundles or []) if b["gap"]["id"] == riff["gap"]), None)
+    ctx = ""
+    if b:
+        ctx = (f"Previous draft: '{riff['line']}'\n"
+               f"Judge critique: {verdict['critique']}\n"
+               f"What was just said: {b.get('transcript_before')} and "
+               f"{b.get('transcript_after')}.\n"
+               f"Rewrite the riff for gap {riff['gap']} — same budget, same `when`.\n")
+    return ctx
+
+
+
+
+def _write_drafts(job: dict, gaps: list[dict], profile: dict,
+                bundles: list[dict] | None = None, critique_context: str = "") -> list[dict]:
+    if critique_context:
+        cache = None  # rewrites bypass cache
+    else:
+        cache = job["dir"] / "riffs.json"
+        if cache.exists():
+            return json.loads(cache.read_text())
     frames = job["dir"] / "frames"
     kind = (profile or {}).get("kind", "other")
     register = REGISTER.get(kind, REGISTER["other"])
@@ -110,7 +150,10 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict,
                'are deciding the *intent*, not the exact millisecond.')
 
     user = []
-    if bundles:
+    if critique_context:
+        user.append({"type": "text", "text":
+            "DIRECTOR'S NOTE — REWRITE REQUEST\n" + critique_context + "\nReturn JSON array."})
+
         # Full-transcript preamble so the writer can plan callbacks — kept
         # separate from per-gap bundles so placement context stays tight.
         lines = []
@@ -159,7 +202,8 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict,
                 when = 0.0
             out.append({"gap": int(r["gap"]), "speaker": "riffer",
                         "line": line, "words": words, "when": when})
-    cache.write_text(json.dumps(out, indent=2))
+    if cache is not None:
+        cache.write_text(json.dumps(out, indent=2))
     return out
 
 

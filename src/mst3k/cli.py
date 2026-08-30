@@ -54,8 +54,8 @@ def cmd_render(args) -> None:
     profile = step("understand", lambda: understand.build_profile(job))
     print(f"    kind={profile.get('kind')}")
 
-    # 4 write (context-driven)
-    riffs = step("write", lambda: writer.write_riffs(job, gaps, profile, bundles))
+    # 4 write (context-driven) + head-writer desk review
+    riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
     print(f"    {len(riffs)} riffs written")
 
     # 5 synthesize + fit
