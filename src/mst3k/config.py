@@ -15,10 +15,14 @@ DEFAULTS = {
     "llm_key": "",
     "llm_model": "qwen3.8-flash",
     "llm_understand_model": "qwen3.8-flash",
-    # voice (solo lineup for v1)
-    "voice_ref": None,          # optional public-domain wav to clone
+    # voice lineup (ensemble configuration)
+    "voice_ref": None,          # solo: optional public-domain wav to clone
     "voice_rate": 1.0,
     "voice_pitch": 0.0,         # semitones; e.g. +2 for puppet-y
+    "voices": [                 # ensemble: Alba default + Jane sidekick
+        {"name": "alba", "pitch": 0.0, "rate": 1.0, "weight": 0.7},
+        {"name": "jane", "pitch": 2.0, "rate": 1.0, "weight": 0.3},
+    ],
     "riff_gain": 1.4,
     "duck_amount": 0.65,
     # timing/comedy
