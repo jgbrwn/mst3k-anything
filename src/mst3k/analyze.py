@@ -52,9 +52,9 @@ def _mk_gap(job, start, end):
             "budget_words": max(2, int(usable * job["words_per_second"]))}
 
 
-def _detect_silence(audio: Path, min_gap: float, gate_db: str = "-40dB") -> list[tuple]:
+def _detect_silence(audio: Path, min_gap: float, gate_db: str = "-37dB") -> list[tuple]:
     proc = subprocess.run(["ffmpeg", "-i", str(audio), "-af",
-                           f"silencedetect=noise={gate_db}:d=0.6", "-f", "null", "-"],
+                           f"silencedetect=noise={gate_db}:d=0.8", "-f", "null", "-"],
                           capture_output=True, text=True)
     starts, ends = [], []
     for line in proc.stderr.splitlines():

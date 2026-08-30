@@ -27,11 +27,11 @@ DEFAULTS = {
     "duck_amount": 0.65,
     # timing/comedy
     "min_gap": 0.8,
-    "margin": 0.35,
-    "lead_in_sec": 4.0,              # don't riff in the first N sec (titles/logos)
+    "margin": 0.2,
+    "lead_in_sec": 3.0,              # don't riff in the first N sec (titles/logos)
     "max_riff_seconds": 9.0,
     "words_per_second": 2.0,         # Pocket TTS measured rate (~2.0 wps actual)
-    "max_tempo_stretch": 1.2,
+    "max_tempo_stretch": 2.0,
     "max_riffs": 400,
     # riff-window detection
     "target_riff_count": 6,          # final output cap

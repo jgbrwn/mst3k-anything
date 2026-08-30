@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import analyze, config as cfgmod, ingest, mix, understand, voice, writer
+from . import analyze, config as cfgmod, context, ingest, mix, transcribe, understand, voice, writer
 
 
 def cmd_render(args) -> None:
@@ -38,17 +38,24 @@ def cmd_render(args) -> None:
         print("No usable riff windows (neither silence nor a quiet moment).")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
+    step("context frames", lambda: context.grab_context_frames(job, gaps))
     analyze.score_visual_interest(job, gaps)
     hot = analyze.hot_moments(job, job["dir"] / "audio.wav")
     (job_dir / "gaps.json").write_text(json.dumps(gaps, indent=2))
     (job_dir / "hot_moments.json").write_text(json.dumps(hot, indent=2))
 
+    # 2b transcribe + bundles
+    asr = step("transcribe", lambda: transcribe.transcribe(job))
+    bundles = context.build_bundles(job, gaps, asr, hot)
+    (job_dir / "bundles.json").write_text(json.dumps(
+        [{k: v for k, v in b.items() if k != "frames"} for b in bundles], indent=1))
+
     # 3 understand
     profile = step("understand", lambda: understand.build_profile(job))
     print(f"    kind={profile.get('kind')}")
 
-    # 4 write
-    riffs = step("write", lambda: writer.write_riffs(job, gaps, profile))
+    # 4 write (context-driven)
+    riffs = step("write", lambda: writer.write_riffs(job, gaps, profile, bundles))
     print(f"    {len(riffs)} riffs written")
 
     # 5 synthesize + fit

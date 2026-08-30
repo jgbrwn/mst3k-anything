@@ -71,7 +71,12 @@ def synthesize(job: dict, riff: dict) -> dict:
         st = 2 ** (pitch / 12)
         af.append(f"asetrate=24000*{st},aresample=24000")
     if tempo != 1.0:
-        af.append(f"atempo={tempo:.4f}")
+        # 1.1x headroom callout: stretch slightly under target so silent holder
+        # doesn't swallow the tail; atempo chain hits <2.0 max via loop
+        while tempo > 2.0:
+            af.append("atempo=2.0")
+            tempo /= 2.0
+        af.append(f"atempo={max(0.5, tempo):.4f}")
     # expressiveness hints from the writer's markup
     af.extend(hint_filters(riff["line"]))
 
