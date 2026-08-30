@@ -12,6 +12,10 @@ from . import analyze, config as cfgmod, context, ingest, mix, transcribe, under
 
 def cmd_render(args) -> None:
     job = cfgmod.load()
+    # prefer recent yt-dlp in ~/.local/bin over any system copy; add to PATH
+    local_yt = Path.home() / ".local" / "bin"
+    if (local_yt / "yt-dlp").exists():
+        os.environ["PATH"] = f"{local_yt}{os.pathsep}" + os.environ.get("PATH", "")
     job["jobs_dir"].mkdir(parents=True, exist_ok=True)
     slug = ingest.slugify(args.source)
     job_dir = job["jobs_dir"] / slug

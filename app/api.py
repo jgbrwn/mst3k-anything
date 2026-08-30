@@ -6,6 +6,7 @@ with a reaper done-callback that marks jobs failed if the process dies.
 Config comes from the project .env via the mst3k package.
 """
 import json
+import os
 import queue
 import shutil
 import sqlite3
@@ -92,7 +93,14 @@ async def run_job(jid: int) -> None:
     job_dir = CFG["jobs_dir"] / row["slug"]
     job_dir.mkdir(parents=True, exist_ok=True)
     logpath = job_dir / "run.log"
-    env = {"PYTHONPATH": str(ROOT / "src")}
+    env = dict(os.environ)
+    # make sure ~/.local/bin survives into subprocesses under systemd's PATH
+    user_bin = Path.home() / ".local" / "bin"
+    if user_bin.exists():
+        path = env.get("PATH", "")
+        if str(user_bin) not in path:
+            env["PATH"] = f"{user_bin}{os.pathsep}{path}"
+    env["PYTHONPATH"] = str(ROOT / "src")
     if row["provider"]:
         env["MST3K_PROVIDER"] = row["provider"]
     if row["model"]:

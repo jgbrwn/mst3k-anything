@@ -26,7 +26,28 @@ def _is_youtube(url: str) -> bool:
 
 
 def _is_archive_org(url: str) -> bool:
-    return urlparse(url).netloc.lower().endswith("archive.org")
+    h = urlparse(url).netloc.lower()
+    return h.endswith("archive.org")
+
+
+def _is_video_file(url: str) -> bool:
+    """URL with explicit media filename we can simply fetch."""
+    ext = Path(urlparse(url).path).suffix.lower()
+    return ext in VIDEO_EXTS
+
+
+def _has_extractor(url: str) -> bool:
+    """Rough heuristic: known sites we trust yt-dlp to handle."""
+    host = urlparse(url).netloc.lower()
+    return any(host == d or host.endswith("." + d) for d in (
+        "youtube.com", "youtu.be", "youtube-nocookie.com",
+        "archive.org",
+        "vimeo.com", "player.vimeo.com",
+        "dailymotion.com", "tiktok.com",
+        "twitch.tv", "clips.twitch.tv",
+        "reddit.com", "twitter.com", "x.com",
+        "instagram.com", "facebook.com", "streamable.com",
+    ))
 
 
 def _probe(path: Path) -> dict:
@@ -87,13 +108,28 @@ def _dl(url: str, dest: Path) -> Path:
     return dest
 
 
+def _ytdlp_bin() -> str:
+    """Prefer ~/.local/bin/yt-dlp (recent) over system yt-dlp."""
+    local = Path.home() / ".local" / "bin" / "yt-dlp"
+    return str(local) if local.exists() else "yt-dlp"
+
+
 def _ytdlp(url: str, job: dict) -> tuple[Path, dict]:
     out = job["dir"] / "ytdl.%(ext)s"
-    subprocess.run(["yt-dlp", "--no-playlist",
-                    "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
-                    "--merge-output-format", "mp4",
-                    "--write-info-json", "--write-subs", "--sub-langs", "en.*,en",
-                    "--sub-format", "srt/vtt/best", "-o", out, url], check=True)
+    base = [_ytdlp_bin(), "--no-playlist",
+            "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
+            "--merge-output-format", "mp4",
+            "--write-info-json", "--write-subs", "--sub-langs", "en.*,en",
+            "--sub-format", "srt/vtt/best", "--remote-components", "ejs:github",
+            "-o", out, url]
+    try:
+        subprocess.run(base, check=True)
+    except subprocess.CalledProcessError:
+        # fallback client profile (yt-dlp sometimes works picks rarely fail
+        # on datacenter IPs)
+        fallback = base.copy()
+        fallback[1:1] = ["--extractor-args", "youtube:player_client=android"]
+        subprocess.run(fallback, check=True)
     vids = sorted(job["dir"].glob("ytdl.*"))
     vid = next((p for p in vids if p.suffix.lower() in VIDEO_EXTS), None)
     if vid is None:
@@ -105,8 +141,11 @@ def _ytdlp(url: str, job: dict) -> tuple[Path, dict]:
     meta_extra = {"title": info.get("title", ""),
                   "description": (info.get("description") or "")[:800],
                   "uploader": info.get("uploader", "")}
-    sub = next((p for p in job["dir"].glob("ytdl.*.srt")),
-               next(job["dir"].glob("ytdl.*.vtt")), None)
+    sub = None
+    for ext in (".srt", ".vtt"):
+        sub = next(job["dir"].glob(f"ytdl.*{ext}"), None)
+        if sub:
+            break
     return vid, meta_extra, sub
 
 
@@ -119,24 +158,39 @@ def ingest(source: str, job: dict) -> tuple[Path, dict]:
         src = Path(source).resolve()
         vid, meta = _normalize(job, src)
         meta.update({"kind_hint": "local", "description": "", "uploader": ""})
-    elif _is_youtube(source) or _is_archive_org(source) and "/details/" in source:
+    elif _is_video_file(source):
+        # Looks like a direct media URL — download plain, keep metadata thin
+        ext = Path(p.path).suffix.lower()
+        dest = d / ("download" + ext)
+        if not dest.exists():
+            _dl(source, dest)
+        vid, meta = _normalize(job, dest)
+        meta.update({"kind_hint": "direct", "title": Path(p.path).stem,
+                     "description": "", "uploader": ""})
+    elif _has_extractor(source):
         vid, extra, sub = _ytdlp(source, job)
         vid, meta = _normalize(job, vid)
         meta.update(extra)
         if sub:
             meta["subtitle_file"] = str(sub)
     else:
-        ext = Path(p.path).suffix.lower()
-        if ext in VIDEO_EXTS:
+        # Unknown URL — ask yt-dlp's generic extractor (it handles lots more
+        # than the fast list)
+        try:
+            vid, extra, sub = _ytdlp(source, job)
+            vid, meta = _normalize(job, vid)
+            meta.update(extra)
+            if sub:
+                meta["subtitle_file"] = str(sub)
+        except subprocess.CalledProcessError as e:
+            # Generic extractor failed; last ditch is direct HTTPS GET
+            ext = Path(p.path).suffix.lower() or ".mp4"
             dest = d / ("download" + ext)
             if not dest.exists():
                 _dl(source, dest)
             vid, meta = _normalize(job, dest)
-            meta.update({"kind_hint": "direct", "title": Path(p.path).stem})
-        else:
-            vid, extra, sub = _ytdlp(source, job)   # generic extractor fallback
-            vid, meta = _normalize(job, vid)
-            meta.update(extra)
+            meta.update({"kind_hint": "direct-fallback", "title": Path(p.path).stem,
+                         "description": "", "uploader": "", "_ytdlp_error": str(e)})
 
     _validate(job, meta)
     (d / "meta.json").write_text(json.dumps(meta, indent=2))
