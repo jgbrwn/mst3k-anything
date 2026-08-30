@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>voice taste test</title>
+<style>
+body { background:#0d0d12; color:#e8e6df; font:15px/1.5 system-ui; padding:2rem; max-width:700px; margin:0 auto }
+h1 { font-family:Georgia,serif } .tag { color:#9a97ad }
+audio { display:block; width:100%; margin:.6rem 0 }
+.card { background:#17171f; border:1px solid #23232e; border-radius:10px; padding:1rem 1.2rem; margin:1rem 0 }
+.label { font-family:ui-monospace,monospace; font-size:.85rem; color:#ffb454 }
+.note { color:#9a97ad; font-size:.85rem; margin-top:.4rem }
+</style></head><body>
+<div><h1>mst3k-anything — voice taste test</h1>
+<p class="tag">Same line, different base voices + pitch shifts. Pick what sounds most "MST3K silhouette" to you. (mp3-wrapped wavs inline.)</p></div>
+<div class="card"><div class="label">bill_boerst (LibriVox narrator, plain)</div><audio controls src="test_bill_boerst.wav"></audio>
+<div class="note">Good starting point for "Crow-like dry student" — try +2 to +4 semitones.</div></div>
+<div class="card"><div class="label">bill_boerst + 4 semitones</div><audio controls src="test_bill_boerst_plus4.wav"></audio>
+<div class="note">Lifts toward puppet-ish without chipmunking. Compare against plain.</div></div>
+<div class="card"><div class="label">bill_boerst + 6 semitones</div><audio controls src="test_bill_boerst_plus6.wav"></audio>
+<div class="note">More Servo-flavored. May be too high for a main voice.</div></div>
+<div class="card"><div class="label">peter_yearsley (LibriVox, plain)</div><audio controls src="test_peter_yearsley.wav"></audio>
+<div class="note">Alternative base. Calmer, drier.</div></div>
+<div class="card"><div class="label">alba (default English)</div><audio controls src="test_alba.wav"></audio>
+<div class="note">Reference — what we've been using. Shows how much color we were missing.</div></div>
+<div class="card"><div class="label">jane</div><audio controls src="test_jane.wav"></audio>
+<div class="note">Higher register; possibly "gypsy-host" archetype.</div></div>
+<p class="tag">Tell me which combination(s) you like and the pitch recipe gets baked into <code>config.py</code> for production.</p>
+</body></html>
