@@ -3,3 +3,4 @@ jobs/
 __pycache__/
 *.pyc
 tts-venv/
+app/data/
