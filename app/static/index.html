@@ -41,6 +41,10 @@
   .st-done { background:#1c2b1f; color:var(--green) }
   .st-failed { background:#3a1d18; color:#e07b6a }
   .stage { margin-top:.65rem; color:var(--amber); font-family:ui-monospace,monospace; font-size:.84rem; min-height:1.2em }
+  .progress-wrap { margin:.5rem 0 0 }
+  .pbar { width:100%; height:6px; background:#2a2a35; border-radius:3px; overflow:hidden }
+  .pfill { height:100%; background:#e8b24a; transition:width .4s }
+  .ptext { font-size:.72rem; color:#888; margin-top:.25rem }
   .log { margin:.7rem 0 0; padding:.7rem; max-height:180px; overflow:auto; white-space:pre-wrap; color:#a8a5b5;
     background:var(--panel2); border:1px solid #20202b; border-radius:7px; font:12px/1.45 ui-monospace,SFMono-Regular,monospace }
   video { width:100%; margin-top:.8rem; border-radius:8px; display:block; background:#000 }
@@ -172,6 +176,7 @@ async function loadHistory(autoTrack=true){
     </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
       <button class="btn2" onclick="track(${j.id})">View</button>
       <button class="btn2" onclick="hideJob(${j.id})">Hide</button>
+      ${j.status==='queued'||j.status==='running'?`<button class="btn2" onclick="cancelJob(${j.id})">Cancel</button>`:''}
       ${terminal?`<button class="btn2 btn-danger" onclick="deleteJob(${j.id})">Delete</button>`:''}
     </div></div></div>`;
   }).join('');
@@ -222,8 +227,17 @@ async function renderActive(id,d,token){
   if(!j){ const r=await fetch(`/api/jobs/${id}`); if(!r.ok)return; j=await r.json(); }
   let html=`<div class="card"><div class="detail-head"><div style="min-width:0"><div class="title">${esc(titleFor(j.source))}</div><div class="src">${esc(j.source)}</div></div>
     <span class="status st-${esc(d.status)}">${esc(d.status)}</span></div>`;
-  if(d.stage && d.status==='running') html+=`<div class="stage">▸ ${esc(d.stage)}</div>`;
-  if(d.log && d.log.length && d.status!=='done') html+=`<pre class="log">${esc(d.log.join('\\n'))}</pre>`;
+  if(d.status==='running' && d.progress){
+    const p=d.progress;
+    html+=`<div class="progress-wrap"><div class="pbar"><div class="pfill" style="width:${p.pct}%"></div></div>
+      <div class="ptext">${p.done}/${p.total} stages complete${p.next_stage?' · next: '+esc(p.next_stage):''}</div></div>`;
+  } else if(d.stage && d.status==='running') html+=`<div class="stage">▸ ${esc(d.stage)}</div>`;
+  if(d.status==='running' || d.status==='queued'){
+    const log=(d.log||[]);
+    html+=(log.length
+      ? `<pre class="log">${esc(log.join('\n'))}</pre>`
+      : `<pre class="log log-waiting">Waiting for job to start…</pre>`);
+  }
   if(d.status==='done'){
     let riffs=[]; try { riffs=await (await fetch(`/api/jobs/${id}/riffs`)).json(); } catch(_){ }
     if(token!==trackToken)return;
@@ -256,6 +270,11 @@ async function rerender(id){
 }
 async function hideJob(id){
   const r=await fetch(`/api/jobs/${id}/hide`,{method:'POST'}); if(r.ok){ if(activeId===id){activeEl.innerHTML='';activeId=null;} await loadHistory(); }
+}
+async function cancelJob(id){
+  const r=await fetch(`/api/jobs/${id}/cancel`,{method:'POST'});
+  if(r.ok){ await loadHistory(); }
+  else alert('Could not cancel: '+await r.text());
 }
 async function deleteJob(id){
   if(!confirm('Delete this completed job and its files?'))return;

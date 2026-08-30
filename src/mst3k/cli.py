@@ -1,6 +1,7 @@
 """mst3k-anything CLI: mst3k render <url-or-path> [options]."""
 import argparse
 import json
+import os
 import shutil
 import sys
 import time
@@ -16,6 +17,13 @@ def cmd_render(args) -> None:
     job_dir = job["jobs_dir"] / slug
     job_dir.mkdir(exist_ok=True)
     job["dir"] = job_dir
+    # persist our PID for cancel-from-web killability
+    (job_dir / "pid").write_text(str(os.getpid()))
+    # start our own process group so os.killpg in cancel hits us + ffmpeg+pockettts
+    try:
+        os.setsid()
+    except OSError:
+        pass  # already pg leader
 
     def step(name, fn):
         t0 = time.time()

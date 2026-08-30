@@ -60,11 +60,20 @@ def init_db() -> None:
     con.commit(); con.close()
 
 
-# --- background worker ---------------------------------------------------
 async def worker() -> None:
+    print("[worker] started", flush=True)
     while True:
-        jid = await asyncio.get_event_loop().run_in_executor(None, _proc.get)
-        await run_job(jid)
+        try:
+            jid = await asyncio.get_event_loop().run_in_executor(None, _proc.get)
+            print(f"[worker] dequeued jid={jid}", flush=True)
+        except Exception as e:
+            print(f"[worker] dequeue crashed: {e!r}", flush=True)
+            import traceback; traceback.print_exc(); await asyncio.sleep(1); continue
+        try:
+            await run_job(jid)
+        except Exception as e:
+            print(f"[worker] run_job {jid} crashed: {e!r}", flush=True)
+            import traceback; traceback.print_exc()
 
 
 def _set(jid, **kw):
@@ -89,9 +98,9 @@ async def run_job(jid: int) -> None:
     if row["model"]:
         env["MST3K_MODEL"] = row["model"]
     # optional per-role judge override (separate picker in UI)
-    if row.get("judge_provider"):
+    if row["judge_provider"]:
         env["MST3K_JUDGE_PROVIDER"] = row["judge_provider"]
-    if row.get("judge_model"):
+    if row["judge_model"]:
         env["MST3K_JUDGE_MODEL"] = row["judge_model"]
     with open(logpath, "w") as log:
         p = await asyncio.create_subprocess_exec(
@@ -206,10 +215,38 @@ def list_jobs():
     return [dict(r) for r in rows]
 
 
+STAGES = [
+    ("ingest", 5),       # download
+    ("gaps", 15),        # silence scan
+    ("frames", 25),      # frame grabs
+    ("transcribe", 35),  # ASR
+    ("understand", 45),  # video profile
+    ("write", 75),       # + judge pass
+    ("synthesize+fit", 90),
+    ("mix", 100),
+]
+STAGE_ORDER = {name: i for i, (name, _) in enumerate(STAGES)}
+
+
+def _progress(lines: list) -> dict:
+    """Compute complete/done-count from [stage] ... done in Ns log lines."""
+    done = sum(1 for l in lines if "] done in " in l or l.endswith("done in 0.0s"))
+    status_names = set()
+    for l in lines:
+        if "] done in " in l or l.endswith("done in 0.0s"):
+            name = l.lstrip("[").split("]")[0]
+            status_names.add(name)
+    i = min(len(status_names), len(STAGES) - 1)
+    total = len(STAGES)
+    next_name = STAGES[i][0] if i < total else None
+    pct = int(100 * (i / total))
+    return {"done": i, "total": total, "pct": pct, "next_stage": next_name,
+            "completed": sorted(status_names)}
+
+
 @app.get("/api/jobs/{jid}/events")
 async def events(jid: int):
     async def gen():
-        sent = 0
         while True:
             con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
             if not row:
@@ -219,7 +256,8 @@ async def events(jid: int):
             stage = next((l[1:l.index("]")] for l in reversed(lines)
                           if l.startswith("[") and "]" in l), None)
             tail = lines[-80:]
-            yield f"data: {json.dumps({'status': row['status'], 'stage': stage, 'log': tail})}\n\n"
+            progress = _progress(lines)
+            yield f"data: {json.dumps({'status': row['status'], 'stage': stage, 'log': tail, 'progress': progress})}\n\n"
             if row["status"] in ("done", "failed"):
                 yield "event: close\ndata: {}\n\n"; return
             await asyncio.sleep(1)
@@ -236,18 +274,95 @@ def hide_job(jid: int):
     return {"id": jid, "hidden": True}
 
 
-@app.post("/api/jobs/{jid}/delete")
-def delete_job(jid: int):
+def _slug_dirs(slug: str) -> list:
+    """All the directories that may hold artifacts for this slug / job.
+
+    The CLI can rename the on-disk dir to a title-based slug after ingest;
+    the DB row keeps the URL-derived slug. Rebuild both name forms so
+    cancel/delete/~ actually clear the right tree.
+    """
+    seen = set()
+    out = []
+    def keep(p):
+        if p.is_dir() and str(p) not in seen:
+            seen.add(str(p)); out.append(p)
+    keep(ROOT / "jobs" / slug)
+    # find slug-named dirs (any point in the chain)
+    for p in (ROOT / "jobs").iterdir():
+        if p.is_dir() and p.name == slug:
+            keep(p)
+    # follow the rename marker: slug.renamed-to -> final title-slug
+    marker = ROOT / "jobs" / f"{slug}.renamed-to"
+    if marker.exists():
+        try:
+            final = marker.read_text().strip()
+            if final:
+                keep(ROOT / "jobs" / final)
+                # protect against chains
+                for m2 in (ROOT / "jobs").glob(f"{final}.renamed-to"):
+                    keep(ROOT / "jobs" / m2.read_text().strip())
+        except Exception:
+            pass
+    # also resolve: <url-slug>.renamed-from -> slug (helpful when called
+    # with a title slug while DB holds the url slug; cheap no-op)
+    for p in (ROOT / "jobs").glob(f"*.renamed-from"):
+        try:
+            if p.read_text().strip() == slug:
+                keep(ROOT / "jobs" / p.name.replace(".renamed-from", ""))
+        except Exception:
+            pass
+    return out
+
+
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: int):
+    """Cancel a queued or running job. Kills the subprocess tree if running."""
     con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
     if not row:
         con.close()
         raise HTTPException(404, "no such job")
+    if row["status"] not in ("queued", "running"):
+        con.close()
+        return {"id": jid, "status": row["status"], "note": "not in-flight"}
+    # signal the worker process first (pid stored in run.log preamble)
+    job_dir = _slug_dirs(row["slug"])[0]
+    pid_file = job_dir / "pid"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            import os, signal
+            os.killpg(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    con.execute("UPDATE jobs SET status='canceled', updated=? WHERE id=?",
+                (time.time(), jid))
+    con.commit(); con.close()
+    return {"id": jid, "status": "canceled"}
+
+
+@app.post("/api/jobs/{jid}/delete")
+def delete_job(jid: int):
+    """Delete a job via cancel-then-remove. Queued/running jobs get canceled;
+    completed/failed/canceled jobs are removed entirely."""
+    con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+    if not row:
+        con.close()
+        raise HTTPException(404, "no such job")
+    slug = row["slug"]
+    # cancel in-flight first
     if row["status"] in ("queued", "running"):
         con.close()
-        raise HTTPException(409, "cannot delete a queued or running job")
-    con.execute("DELETE FROM jobs WHERE id=?", (jid,))
-    con.commit(); con.close()
-    shutil.rmtree(ROOT / "jobs" / row["slug"], ignore_errors=True)
+        cancel_job(jid)
+        # wait for cancel to settle
+        import time as t; t.sleep(0.2)
+        con = db(); con.execute("DELETE FROM jobs WHERE id=?", (jid,))
+        con.commit(); con.close()
+    else:
+        con.execute("DELETE FROM jobs WHERE id=?", (jid,))
+        con.commit(); con.close()
+    # remove all artifact directories that match this slug family
+    for d in _slug_dirs(slug):
+        shutil.rmtree(d, ignore_errors=True)
     return {"id": jid, "deleted": True}
 @app.get("/api/jobs/{jid}/riffs")
 def get_riffs(jid: int):
@@ -315,6 +430,13 @@ import asyncio  # noqa: E402  (after subprocess-free module top for clarity)
 @app.on_event("startup")
 async def startup() -> None:
     init_db()
+    # requeue jobs that never made it or got stranded mid-crash
+    con = db()
+    con.execute("UPDATE jobs SET status='failed', error='server restarted' "
+                "WHERE status='running'")
+    for (i,) in con.execute("SELECT id FROM jobs WHERE status='queued'"):
+        _proc.put(i)
+    con.commit(); con.close()
     asyncio.create_task(worker())
 
 
