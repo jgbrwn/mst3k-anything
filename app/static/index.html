@@ -242,6 +242,7 @@ document.addEventListener('pointerup',()=>{window._drag=false});
 setInterval(()=>{const o=document.getElementById('orig'),r=document.getElementById('riff');if(o&&r&&Math.abs(o.currentTime-r.currentTime)>.1){o.currentTime=r.currentTime;if(o.paused&&!r.paused)o.play();if(!o.paused&&r.paused)o.pause()}},120);
 loadProviders().catch(e=>{pickerNote.textContent='Provider list unavailable.'});
 loadHistory();
+setInterval(loadHistory,5000);
 </script>
 </body>
 </html>
