@@ -1,0 +1,3 @@
+#!/bin/sh
+# block blind adds
+if git diff --cached --name-only | wc -l | grep -qv '^0$' && git diff --cached --name-only | grep -q .; then :; fi
