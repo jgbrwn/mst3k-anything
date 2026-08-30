@@ -104,14 +104,31 @@ def write_riffs(job: dict, gaps: list[dict], profile: dict,
                'in order. Empty string "" is allowed if no good riff exists.')
 
     user = []
-    prev_riff = ""
     if bundles:
+        # Full-transcript preamble so the writer can plan callbacks — kept
+        # separate from per-gap bundles so placement context stays tight.
+        lines = []
+        for b in bundles:
+            lines.extend(b["transcript_before"])
+            lines.extend(b["transcript_over"])
+            lines.extend(b["transcript_after"])
+        seen, full = set(), []
+        for ln in sorted(lines, key=lambda x: x["start"]):
+            k = round(ln["start"], 1)
+            if k in seen:
+                continue
+            seen.add(k)
+            full.append(f"{ln['start']:7.1f}s  {ln['text']}")
+        if full:
+            user.append({"type": "text", "text": (
+                "FULL TRANSCRIPT (reference; callback targets may be anywhere "
+                "in here):\n" + "\n".join(full))})
+
         bundle_by_gap = {b["gap"]["id"]: b for b in bundles}
+        prev_line = ""
         for g in gaps:
-            user.extend(_bundle_to_user(bundle_by_gap[g["id"]], prev_riff))
-            # prev_riff wires in the previous gap's line next iteration
-            # (filled post-hoc here by peeking; ok for ordering-only)
-            prev_riff = ""  # reset; full riff-chaining happens once written
+            user.extend(_bundle_to_user(bundle_by_gap[g["id"]], prev_line))
+            prev_line = ""  # placeholder until riffs returned
     else:
         for g in gaps:
             tag = f", score={g.get('score', 0):.2f}" if "score" in g else ""

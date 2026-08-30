@@ -88,7 +88,9 @@ def b64_image(path) -> str:
 # ---- module-level helpers used by the pipeline stages -----------------
 
 def _client(job: dict) -> "LLM":
-    return LLM(job["llm_base"], job["llm_key"], job.get("_model") or job["llm_model"])
+    from . import providers
+    r = providers.resolve(job)
+    return LLM(r["base_url"], r["key"], job.get("_model") or r["model"])
 
 
 def chat(job: dict, system: str, user, temperature: float = 0.9,
