@@ -98,10 +98,13 @@ async def run_job(jid: int) -> None:
             PE, "-m", "mst3k.cli", "render", row["source"],
             stdout=log, stderr=asyncio.subprocess.STDOUT, env=env)
         rc = await p.wait()
-    video = job_dir / f"{row['slug']}_riffed.mp4"
-    if rc == 0 and video.exists():
+    # slug may have been changed to a title-based form after ingest;
+    # the on-disk artifacts live under whatever slug the CLI settled on.
+    video = next(job_dir.glob("*_riffed.mp4"), None)
+    srt   = next(job_dir.glob("*_riffs.srt"), None)
+    if rc == 0 and video and video.exists():
         _set(jid, status="done", video=str(video),
-             srt=str(job_dir / f"{row['slug']}_riffs.srt"),
+             srt=str(srt) if srt else None,
              riffs=str(job_dir / "riffs.json"))
     else:
         err = logpath.read_text()[-4000:]

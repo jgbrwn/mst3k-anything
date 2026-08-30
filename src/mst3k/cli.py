@@ -27,6 +27,15 @@ def cmd_render(args) -> None:
     # 1 ingest
     src, meta = step("ingest", lambda: ingest.ingest(args.source, job))
     job["source"], job["meta"] = src, meta
+
+    # settle on a title-based slug once we have metadata
+    title_slug = ingest.slugify(meta.get("title") or slug)
+    if title_slug != slug:
+        new_dir = job["jobs_dir"] / title_slug
+        if not new_dir.exists():
+            job_dir.rename(new_dir)
+            slug, job_dir = title_slug, new_dir
+            job["dir"] = job_dir
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 

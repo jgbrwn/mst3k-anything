@@ -155,10 +155,15 @@ async function updateProviderUI(){
 providerEl.addEventListener('change',updateProviderUI);
 judgeProviderEl.addEventListener('change',updateProviderUI);
 
-async function loadHistory(){
+async function loadHistory(autoTrack=true){
   const r=await fetch('/api/jobs'); if(!r.ok) return;
   jobs=await r.json();
   if(!jobs.length){ listEl.innerHTML='<div class="empty">Paste a video URL to start riffing.</div>'; return; }
+  // when the user refreshes mid-render, re-attach to whatever's in flight
+  if(autoTrack && !activeId){
+    const inFlight=jobs.find(j=>j.status==='queued'||j.status==='running');
+    if(inFlight){ track(inFlight.id); }
+  }
   listEl.innerHTML=jobs.map(j=>{
     const terminal=j.status==='done'||j.status==='failed';
     return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
@@ -192,9 +197,15 @@ document.getElementById('f').addEventListener('submit',async e=>{
   finally { btn.disabled=false; }
 });
 
-function track(id){
+async function track(id){
   if(window._es) window._es.close();
   activeId=id; const token=++trackToken;
+  // show the console immediately — don't wait for first SSE frame
+  try { const r=await fetch(`/api/jobs/${id}`); const j=await r.json();
+    jobs=jobs.filter(x=>x.id!==id).concat(j);
+    renderActive(id, {status:j.status, log:[], stage:null}, token);
+    activeEl.scrollIntoView({behavior:'smooth',block:'start'});
+  } catch(_){}
   const es=new EventSource(`/api/jobs/${id}/events`); window._es=es;
   es.onmessage=m=>{
     const d=JSON.parse(m.data); if(d.error) return;
