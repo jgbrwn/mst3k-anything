@@ -57,7 +57,7 @@ def find_gaps(job: dict) -> list[dict]:
 
 def _mk_gap(job, start, end):
     dur = end - start
-    if dur < job["min_gap"] or start < 0.5:
+    if dur < job["min_gap"] or start < job.get("lead_in_sec", 0.5):
         return None
     usable = max(0.4, min(dur - 2 * job["margin"], job["max_riff_seconds"]))
     return {"id": 0, "start": round(start, 3), "end": round(end, 3),
@@ -90,8 +90,9 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
     calmest windows so the pipeline still produces riffs. Ducking still applies."""
     duration = job["meta"]["duration"]
     win, hop = job["moment_win_sec"], job["moment_hop_sec"]
+    lead = job.get("lead_in_sec", 0.5)
     scored = []
-    for start in _frange(0.5, max(0.5, duration - win), hop):
+    for start in _frange(lead, max(lead, duration - win), hop):
         end = min(start + win, duration)
         aseg = _seg(job, audio, start, end)
         if aseg is None:

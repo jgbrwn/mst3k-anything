@@ -82,6 +82,8 @@ def synthesize(job: dict, riff: dict) -> dict:
                             "-af", ",".join(af), str(out)], check=True)
         wav = out
         dur = probe_duration(wav)
+        if dur <= 0:
+            return None
     return {"path": wav, "duration": dur, "tempo": tempo, "voice": vname,
             "ok": dur <= budget + 0.05}
 

@@ -28,6 +28,7 @@ DEFAULTS = {
     # timing/comedy
     "min_gap": 1.4,
     "margin": 0.35,
+    "lead_in_sec": 4.0,              # don't riff in the first N sec (titles/logos)
     "max_riff_seconds": 9.0,
     "words_per_second": 2.0,         # Pocket TTS measured rate (~2.0 wps actual)
     "max_tempo_stretch": 1.2,
@@ -38,7 +39,7 @@ DEFAULTS = {
     "silence_ratio_ok": 0.04,
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
-    "moment_hop_sec": 2.0,
+    "moment_hop_sec": 1.2,
     "speech_noise_db": "-35dB",
     "speech_dur": 0.3,
     "min_riff_space_sec": 10.0,
