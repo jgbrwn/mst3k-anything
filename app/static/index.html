@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mst3k-anything — riff any video</title>
+<style>
+  :root {
+    --bg:#0d0d12; --panel:#17171f; --line:#23232e; --ink:#e8e6df;
+    --dim:#9a97ad; --amber:#ffb454; --red:#c0392b; --green:#2ecc71;
+  }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 "Segoe UI",system-ui,sans-serif }
+  .wrap { max-width:860px; margin:0 auto; padding:2rem 1.25rem 4rem }
+  .curtain { height:6px; background:repeating-linear-gradient(90deg,
+    var(--red) 0 28px, #8e2b20 28px 56px); border-radius:3px; opacity:.7 }
+  h1 { font-family:Georgia,serif; letter-spacing:.03em; margin:.6em 0 .1em;
+       font-size:2rem }
+  .tag { color:var(--dim); margin:0 0 1.6rem }
+  form { display:flex; gap:.5rem; margin-bottom:1.4rem }
+  input[type=url] { flex:1; padding:.65rem .8rem; background:var(--panel);
+    border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:1rem }
+  button { padding:.65rem 1.1rem; background:var(--amber); color:#1a1208;
+    border:0; border-radius:8px; font-weight:600; cursor:pointer }
+  button:disabled { opacity:.45; cursor:default }
+  .card { background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:1.1rem 1.2rem; margin-bottom:1rem }
+  .status { display:inline-block; padding:.1em .6em; border-radius:20px;
+    font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em }
+  .st-queued { background:#2a2a36; color:var(--dim) }
+  .st-running { background:#3a2f18; color:var(--amber) }
+  .st-done { background:#1c2b1f; color:var(--green) }
+  .st-failed { background:#3a1d18; color:#e07b6a }
+  .src { color:var(--dim); font-size:.85rem; word-break:break-all }
+  .stage { margin-top:.5rem; color:var(--dim); font-family:ui-monospace,monospace;
+    font-size:.85rem; min-height:1.2em }
+  video { width:100%; margin-top:.8rem; border-radius:8px; display:block;
+    background:#000 }
+  a.dl { color:var(--amber); font-size:.9rem; margin-right:1rem }
+  .err { color:#e07b6a; font-size:.8rem; white-space:pre-wrap;
+    max-height:150px; overflow:auto; margin-top:.5rem }
+  .hist h2 { font-family:Georgia,serif; font-size:1.1rem; color:var(--dim);
+    margin:1.6rem 0 .6rem }
+  .row { display:flex; justify-content:space-between; align-items:center;
+    gap:1rem; padding:.55rem .2rem; border-bottom:1px solid var(--line) }
+  .row .src { flex:1 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="curtain"></div>
+  <h1>mst3k-anything</h1>
+  <p class="tag">Paste any video URL (YouTube, archive.org, direct link). Get back robot heckling, perfectly timed.</p>
+  <form id="f">
+    <input id="src" type="url" required placeholder="https://youtube.com/watch?v=…">
+    <button type="submit">🎬 Riff it</button>
+  </form>
+  <div id="active"></div>
+  <div class="hist"><h2>History</h2><div id="list"></div></div>
+</div>
+<script>
+const listEl = document.getElementById('list');
+const activeEl = document.getElementById('active');
+
+async function loadHistory(){
+  const rows = await (await fetch('/api/jobs')).json();
+  listEl.innerHTML = rows.map(r =>
+    `<div class="row"><span class="src">${esc(r.source)}</span>` +
+    `<span class="status st-${r.status}">${r.status}</span>` +
+    (r.status==='done'
+      ? `<a class="dl" href="/api/jobs/${r.id}/video">watch</a>`
+      : `<a class="dl" href="#" onclick="track(${r.id});return false">view</a>`)
+    + `</div>`).join('');
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+document.getElementById('f').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const src = document.getElementById('src').value;
+  const r = await fetch('/api/jobs',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({source:src})});
+  const j = await r.json();
+  document.getElementById('src').value='';
+  track(j.id); loadHistory();
+});
+
+function track(id){
+  if (window._es) window._es.close();
+  const es = new EventSource(`/api/jobs/${id}/events`);
+  window._es = es;
+  es.onmessage = m=>{
+    const d = JSON.parse(m.data);
+    renderActive(id,d);
+    if(d.status==='done'||d.status==='failed'){ es.close(); loadHistory(); }
+  };
+}
+
+async function renderActive(id,d){
+  let html = `<div class="card"><span class="status st-${d.status}">${d.status}</span>`;
+  if (d.stage && d.status==='running') html += `<div class="stage">▸ ${esc(d.stage)}</div>`;
+  if (d.status==='done'){
+    html += `<video controls src="/api/jobs/${id}/video"></video>` +
+      `<p><a class="dl" href="/api/jobs/${id}/video" download>download mp4</a>` +
+      `<a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>`;
+  }
+  if (d.status==='failed'){
+    const j = await (await fetch(`/api/jobs/${id}`)).json();
+    html += `<div class="err">${esc(j.error||'unknown error')}</div>`;
+  }
+  activeEl.innerHTML = html + `</div>`;
+}
+
+loadHistory();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=mst3k-anything (FastAPI web app)
+After=network.target
+
+[Service]
+Type=simple
+User=exedev
+WorkingDirectory=/home/exedev/mst3k-anything
+Environment=PYTHONPATH=/home/exedev/mst3k-anything/src
+ExecStart=/home/exedev/mst3k-anything/tts-venv/bin/python3 -m uvicorn app.api:app --app-dir /home/exedev/mst3k-anything --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
