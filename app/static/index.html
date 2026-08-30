@@ -6,61 +6,70 @@
 <title>mst3k-anything — riff any video</title>
 <style>
   :root {
-    --bg:#0d0d12; --panel:#17171f; --line:#23232e; --ink:#e8e6df;
-    --dim:#9a97ad; --amber:#ffb454; --red:#c0392b; --green:#2ecc71;
+    --bg:#0d0d12; --panel:#17171f; --panel2:#111118; --line:#292936; --ink:#e8e6df;
+    --dim:#9a97ad; --amber:#ffb454; --red:#c0392b; --green:#2ecc71; --blue:#8eb8ff;
   }
   * { box-sizing:border-box }
-  body { margin:0; background:var(--bg); color:var(--ink);
-         font:15px/1.5 "Segoe UI",system-ui,sans-serif }
-  .wrap { max-width:860px; margin:0 auto; padding:2rem 1.25rem 4rem }
-  .curtain { height:6px; background:repeating-linear-gradient(90deg,
-    var(--red) 0 28px, #8e2b20 28px 56px); border-radius:3px; opacity:.7 }
-  h1 { font-family:Georgia,serif; letter-spacing:.03em; margin:.6em 0 .1em;
-       font-size:2rem }
-  .tag { color:var(--dim); margin:0 0 1.6rem }
-  form { display:flex; gap:.5rem; margin-bottom:1.4rem }
-  input[type=url] { flex:1; padding:.65rem .8rem; background:var(--panel);
-    border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:1rem }
-  button { padding:.65rem 1.1rem; background:var(--amber); color:#1a1208;
-    border:0; border-radius:8px; font-weight:600; cursor:pointer }
+  body { margin:0; background:radial-gradient(ellipse at 50% -20%,#20202d 0,var(--bg) 52%);
+    color:var(--ink); font:15px/1.5 "Segoe UI",system-ui,sans-serif; min-height:100vh }
+  .wrap { max-width:900px; margin:0 auto; padding:2rem 1.25rem 4rem }
+  .curtain { height:7px; background:repeating-linear-gradient(90deg,var(--red) 0 28px,#8e2b20 28px 56px);
+    border-radius:3px; opacity:.8; box-shadow:0 0 24px #c0392b33 }
+  h1 { font-family:Georgia,serif; letter-spacing:.03em; margin:.65em 0 .1em; font-size:2.1rem }
+  .tag { color:var(--dim); margin:0 0 1.5rem }
+  form { display:grid; grid-template-columns:minmax(0,1fr) 190px auto; gap:.6rem; margin-bottom:1.4rem }
+  input, select { padding:.68rem .8rem; background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; color:var(--ink); font-size:.95rem; min-width:0 }
+  input:focus, select:focus, textarea:focus { outline:2px solid #ffb45455; border-color:var(--amber) }
+  button { padding:.68rem 1.1rem; background:var(--amber); color:#1a1208; border:0; border-radius:8px;
+    font-weight:700; cursor:pointer; white-space:nowrap }
   button:disabled { opacity:.45; cursor:default }
-  .card { background:var(--panel); border:1px solid var(--line);
-    border-radius:12px; padding:1.1rem 1.2rem; margin-bottom:1rem }
-  .status { display:inline-block; padding:.1em .6em; border-radius:20px;
-    font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em }
-  .st-queued { background:#2a2a36; color:var(--dim) }
+  .picker-note { color:var(--dim); font-size:.8rem; margin:-.9rem 0 1.4rem; min-height:1.2em }
+  .model-wrap { display:none; grid-column:2 / 3; margin-top:-.25rem }
+  .model-wrap.show { display:block }
+  .model-wrap input { width:100% }
+  .card { background:linear-gradient(145deg,var(--panel),#14141c); border:1px solid var(--line);
+    border-radius:12px; padding:1.1rem 1.2rem; margin-bottom:1rem; box-shadow:0 8px 30px #0002 }
+  .detail-head, .row-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem }
+  .title { font-weight:700; font-size:1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .src { color:var(--dim); font-size:.82rem; word-break:break-all }
+  .meta { color:var(--dim); font-size:.78rem; margin-top:.15rem }
+  .status { display:inline-block; padding:.13em .65em; border-radius:20px; font-size:.72rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em; flex:none }
+  .st-queued { background:#2a2a36; color:#c6c3d0 }
   .st-running { background:#3a2f18; color:var(--amber) }
   .st-done { background:#1c2b1f; color:var(--green) }
   .st-failed { background:#3a1d18; color:#e07b6a }
-  .src { color:var(--dim); font-size:.85rem; word-break:break-all }
-  .stage { margin-top:.5rem; color:var(--dim); font-family:ui-monospace,monospace;
-    font-size:.85rem; min-height:1.2em }
-  video { width:100%; margin-top:.8rem; border-radius:8px; display:block;
-    background:#000 }
-  a.dl { color:var(--amber); font-size:.9rem; margin-right:1rem }
-  .err { color:#e07b6a; font-size:.8rem; white-space:pre-wrap;
-    max-height:150px; overflow:auto; margin-top:.5rem }
-  textarea { width:100%; height:150px; background:#0a0a0e; color:var(--ink);
-    border:1px solid var(--line); border-radius:8px; padding:.6rem;
-    font-family:ui-monospace,monospace; font-size:.85rem; margin-top:.6rem }
-  .btn2 { background:#2a2a36; color:var(--ink); padding:.45rem .8rem;
-    border-radius:6px; border:1px solid var(--line); cursor:pointer; font-size:.85rem }
+  .stage { margin-top:.65rem; color:var(--amber); font-family:ui-monospace,monospace; font-size:.84rem; min-height:1.2em }
+  .log { margin:.7rem 0 0; padding:.7rem; max-height:180px; overflow:auto; white-space:pre-wrap; color:#a8a5b5;
+    background:var(--panel2); border:1px solid #20202b; border-radius:7px; font:12px/1.45 ui-monospace,SFMono-Regular,monospace }
+  video { width:100%; margin-top:.8rem; border-radius:8px; display:block; background:#000 }
+  a.dl { color:var(--amber); font-size:.86rem; margin-right:1rem }
+  .err { color:#e07b6a; font-size:.8rem; white-space:pre-wrap; max-height:180px; overflow:auto; margin-top:.7rem }
+  textarea { width:100%; height:155px; background:#0a0a0e; color:var(--ink); border:1px solid var(--line); border-radius:8px;
+    padding:.6rem; font-family:ui-monospace,monospace; font-size:.82rem; margin:.6rem 0 .45rem; resize:vertical }
+  .btn2 { background:#2a2a36; color:var(--ink); padding:.45rem .8rem; border-radius:6px; border:1px solid var(--line); cursor:pointer; font-size:.83rem }
+  .btn-danger { color:#e07b6a; background:#291b1d }
   .compare { position:relative; width:100%; margin:.8rem 0; user-select:none }
   .compare video { display:block; width:100%; border-radius:8px }
   .compare .after { position:absolute; inset:0; overflow:hidden }
-  .compare .after video { position:absolute; top:0; height:100%; width:100%;
-    clip-path: inset(0 0 0 50%); border-radius:0 }
-  .compare .handle { position:absolute; top:0; left:50%; width:3px; height:100%;
-    background:var(--amber); cursor:ew-resize; z-index:5 }
-  .compare .handle::after { content:'⇆'; position:absolute; top:50%; left:50%;
-    transform:translate(-50%,-50%); background:var(--amber); color:#1a1208;
-    border-radius:50%; width:28px; height:28px; display:flex; align-items:center;
-    justify-content:center; font-size:.9rem }
-  .hist h2 { font-family:Georgia,serif; font-size:1.1rem; color:var(--dim);
-    margin:1.6rem 0 .6rem }
-  .row { display:flex; justify-content:space-between; align-items:center;
-    gap:1rem; padding:.55rem .2rem; border-bottom:1px solid var(--line) }
-  .row .src { flex:1 }
+  .compare .after video { position:absolute; top:0; height:100%; width:100%; clip-path:inset(0 0 0 50%); border-radius:0 }
+  .compare .handle { position:absolute; top:0; left:50%; width:3px; height:100%; background:var(--amber); cursor:ew-resize; z-index:5 }
+  .compare .handle::after { content:'⇆'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--amber);
+    color:#1a1208; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-size:.9rem }
+  .hint { color:var(--dim); font-size:.82rem }
+  .hist h2 { font-family:Georgia,serif; font-size:1.15rem; color:var(--dim); margin:1.7rem 0 .55rem }
+  .row { padding:.75rem .2rem; border-bottom:1px solid var(--line) }
+  .row-actions { display:flex; align-items:center; gap:.45rem; flex:none }
+  .empty { color:var(--dim); border:1px dashed var(--line); border-radius:10px; padding:1.25rem; text-align:center }
+  @media (max-width:700px) {
+    form { grid-template-columns:1fr 1fr }
+    form input[type=url] { grid-column:1 / -1 }
+    form button { grid-column:2 }
+    .model-wrap { grid-column:1 / -1; margin-top:-.2rem }
+    .detail-head, .row-head { align-items:flex-start; flex-direction:column; gap:.55rem }
+    .row-actions { width:100%; justify-content:flex-start }
+  }
 </style>
 </head>
 <body>
@@ -69,110 +78,169 @@
   <h1>mst3k-anything</h1>
   <p class="tag">Paste any video URL (YouTube, archive.org, direct link). Get back robot heckling, perfectly timed.</p>
   <form id="f">
-    <input id="src" type="url" required placeholder="https://youtube.com/watch?v=…">
-    <button type="submit">🎬 Riff it</button>
+    <input id="src" type="url" required placeholder="https://youtube.com/watch?v=…" aria-label="Video URL">
+    <select id="provider" aria-label="LLM provider"></select>
+    <button id="submitBtn" type="submit">🎬 Riff it</button>
+    <div id="modelWrap" class="model-wrap">
+      <input id="orModel" list="orModels" placeholder="OpenRouter model (provider/model)" aria-label="OpenRouter model">
+      <datalist id="orModels"></datalist>
+    </div>
   </form>
+  <div id="pickerNote" class="picker-note"></div>
   <div id="active"></div>
   <div class="hist"><h2>History</h2><div id="list"></div></div>
 </div>
 <script>
 const listEl = document.getElementById('list');
 const activeEl = document.getElementById('active');
+const providerEl = document.getElementById('provider');
+const modelWrap = document.getElementById('modelWrap');
+const orModelEl = document.getElementById('orModel');
+const pickerNote = document.getElementById('pickerNote');
+let providers = [], jobs = [], activeId = null, trackToken = 0, orLoaded = false;
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s == null ? '' : String(s); return d.innerHTML }
+function titleFor(source){
+  try { const u=new URL(source); const tail=u.pathname.split('/').filter(Boolean).pop(); return tail || u.hostname }
+  catch (_) { return source.split('/').filter(Boolean).pop() || source }
+}
+function ago(t){
+  const sec=Math.max(0, Math.floor(Date.now()/1000-(Number(t)||0)));
+  if(sec<60) return 'just now'; if(sec<3600) return `${Math.floor(sec/60)}m ago`;
+  if(sec<86400) return `${Math.floor(sec/3600)}h ago`; return `${Math.floor(sec/86400)}d ago`;
+}
+function providerFor(id){ return providers.find(p=>p.id===id) || {}; }
+function inFlightExcept(id){ return jobs.some(j=>j.id!==id && (j.status==='queued'||j.status==='running')) }
+
+async function loadProviders(){
+  const r=await fetch('/api/providers');
+  if(!r.ok) throw new Error(await r.text());
+  providers=(await r.json()).providers || [];
+  providerEl.innerHTML=providers.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  providerEl.value='hyper'; updateProviderUI();
+}
+async function updateProviderUI(){
+  const p=providerFor(providerEl.value);
+  const isOr=providerEl.value==='openrouter'; modelWrap.classList.toggle('show',isOr);
+  pickerNote.textContent=isOr ? 'Choose a model by name, or type a provider/model id.' :
+    (p.model ? `Model: ${p.model} · ${p.base}` : '');
+  if(isOr && !orLoaded){
+    pickerNote.textContent='Loading OpenRouter models…';
+    try {
+      const r=await fetch('/api/providers/openrouter/models');
+      if(!r.ok) throw new Error(await r.text());
+      const models=await r.json();
+      document.getElementById('orModels').innerHTML=models.map(m=>
+        `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
+      orLoaded=true; pickerNote.textContent=`${models.length} OpenRouter models · type to filter or enter an id.`;
+    } catch(e) { pickerNote.textContent='OpenRouter model list unavailable; type a provider/model id.'; }
+  }
+}
+providerEl.addEventListener('change',updateProviderUI);
 
 async function loadHistory(){
-  const rows = await (await fetch('/api/jobs')).json();
-  listEl.innerHTML = rows.map(r =>
-    `<div class="row"><span class="src">${esc(r.source)}</span>` +
-    `<span class="status st-${r.status}">${r.status}</span>` +
-    (r.status==='done'
-      ? `<a class="dl" href="/api/jobs/${r.id}/video">watch</a>`
-      : `<a class="dl" href="#" onclick="track(${r.id});return false">view</a>`)
-    + `</div>`).join('');
+  const r=await fetch('/api/jobs'); if(!r.ok) return;
+  jobs=await r.json();
+  if(!jobs.length){ listEl.innerHTML='<div class="empty">Paste a video URL to start riffing.</div>'; return; }
+  listEl.innerHTML=jobs.map(j=>{
+    const terminal=j.status==='done'||j.status==='failed';
+    return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
+      <div class="title" title="${esc(j.source)}">${esc(titleFor(j.source))}</div>
+      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}</div>
+    </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
+      <button class="btn2" onclick="track(${j.id})">View</button>
+      <button class="btn2" onclick="hideJob(${j.id})">Hide</button>
+      ${terminal?`<button class="btn2 btn-danger" onclick="deleteJob(${j.id})">Delete</button>`:''}
+    </div></div></div>`;
+  }).join('');
+  updateRerenderButton();
 }
 
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
-
-document.getElementById('f').addEventListener('submit', async e=>{
+document.getElementById('f').addEventListener('submit',async e=>{
   e.preventDefault();
-  const src = document.getElementById('src').value;
-  const r = await fetch('/api/jobs',{method:'POST',
-    headers:{'Content-Type':'application/json'}, body:JSON.stringify({source:src})});
-  const j = await r.json();
-  document.getElementById('src').value='';
-  track(j.id); loadHistory();
+  const src=document.getElementById('src').value.trim(), provider=providerEl.value;
+  const body={url:src,provider};
+  if(provider==='openrouter' && orModelEl.value.trim()) body.model=orModelEl.value.trim();
+  const btn=document.getElementById('submitBtn'); btn.disabled=true;
+  try {
+    const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(await r.text());
+    const j=await r.json(); document.getElementById('src').value='';
+    track(j.id); await loadHistory();
+  } catch(err) { alert('Could not start job: '+err.message); }
+  finally { btn.disabled=false; }
 });
 
 function track(id){
-  if (window._es) window._es.close();
-  const es = new EventSource(`/api/jobs/${id}/events`);
-  window._es = es;
-  es.onmessage = m=>{
-    const d = JSON.parse(m.data);
-    renderActive(id,d);
+  if(window._es) window._es.close();
+  activeId=id; const token=++trackToken;
+  const es=new EventSource(`/api/jobs/${id}/events`); window._es=es;
+  es.onmessage=m=>{
+    const d=JSON.parse(m.data); if(d.error) return;
+    const j=jobs.find(x=>x.id===id); if(j) j.status=d.status;
+    renderActive(id,d,token);
     if(d.status==='done'||d.status==='failed'){ es.close(); loadHistory(); }
   };
+  es.onerror=()=>{ if(es.readyState===EventSource.CLOSED) return; };
 }
 
-async function renderActive(id,d){
-  let html = `<div class="card"><span class="status st-${d.status}">${d.status}</span>`;
-  if (d.stage && d.status==='running') html += `<div class="stage">▸ ${esc(d.stage)}</div>`;
-  if (d.status==='done'){
-    const riffs = await (await fetch(`/api/jobs/${id}/riffs`)).json();
-    html += `
-      <label style="color:var(--dim);font-size:.85rem">Drag the handle right to leave the riff over the original:</label>
-      <div class="compare" id="cmp">
-        <video controls muted src="/api/jobs/${id}/video" style="position:relative" id="orig"></video>
-        <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div>
-        <div class="handle" id="handle"></div>
-      </div>
-      <p style="color:var(--dim);font-size:.85rem">
-      <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a>
-      <a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
-      <p style="color:var(--dim);font-size:.85rem">Re-edit the lines below (cheap re-render, keeps media):</p>
-      <textarea id="riffsBox">${esc(JSON.stringify(riffs, null, 2))}</textarea>
-      <button class="btn2" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
+async function renderActive(id,d,token){
+  if(token!==trackToken) return;
+  let j=jobs.find(x=>x.id===id);
+  if(!j){ const r=await fetch(`/api/jobs/${id}`); if(!r.ok)return; j=await r.json(); }
+  let html=`<div class="card"><div class="detail-head"><div style="min-width:0"><div class="title">${esc(titleFor(j.source))}</div><div class="src">${esc(j.source)}</div></div>
+    <span class="status st-${esc(d.status)}">${esc(d.status)}</span></div>`;
+  if(d.stage && d.status==='running') html+=`<div class="stage">▸ ${esc(d.stage)}</div>`;
+  if(d.log && d.log.length && d.status!=='done') html+=`<pre class="log">${esc(d.log.join('\\n'))}</pre>`;
+  if(d.status==='done'){
+    let riffs=[]; try { riffs=await (await fetch(`/api/jobs/${id}/riffs`)).json(); } catch(_){ }
+    if(token!==trackToken)return;
+    const value=JSON.stringify(riffs,null,2); window._riffsOriginal=value; window._activeJobId=id;
+    html+=`<p class="hint">Drag the handle to compare the original and riffed video.</p>
+      <div class="compare" id="cmp"><video controls muted src="/api/jobs/${id}/video" id="orig"></video>
+      <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div><div class="handle" id="handle"></div></div>
+      <p><a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
+      <p class="hint">Re-edit the lines below (cheap re-render, keeps media):</p>
+      <textarea id="riffsBox">${esc(value)}</textarea>
+      <button class="btn2" id="rerenderBtn" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
   }
-  if (d.status==='failed'){
-    const j = await (await fetch(`/api/jobs/${id}`)).json();
-    html += `<div class="err">${esc(j.error||'unknown error')}</div>`;
+  if(d.status==='failed'){
+    const r=await fetch(`/api/jobs/${id}`); const detail=r.ok?await r.json():{};
+    if(token!==trackToken)return; html+=`<div class="err">${esc(detail.error||'unknown error')}</div>`;
   }
-  activeEl.innerHTML = html + `</div>`;
+  if(token!==trackToken)return; activeEl.innerHTML=html+'</div>'; updateRerenderButton();
+  const box=document.getElementById('riffsBox'); if(box)box.addEventListener('input',updateRerenderButton);
 }
-
+function updateRerenderButton(){
+  const b=document.getElementById('rerenderBtn'), box=document.getElementById('riffsBox'); if(!b||!box)return;
+  b.disabled=box.value===window._riffsOriginal || inFlightExcept(window._activeJobId);
+}
 async function rerender(id){
-  const body = document.getElementById('riffsBox').value;
-  const r = await fetch(`/api/jobs/${id}/rerender`,{method:'POST',
-    headers:{'Content-Type':'application/json'}, body});
-  if(!r.ok){ alert('Invalid JSON: '+await r.text()); return; }
-  track(id);
+  const box=document.getElementById('riffsBox'); if(!box)return;
+  if(box.value===window._riffsOriginal || inFlightExcept(id))return;
+  const r=await fetch(`/api/jobs/${id}/rerender`,{method:'POST',headers:{'Content-Type':'application/json'},body:box.value});
+  if(!r.ok){ alert('Could not re-render: '+await r.text()); return; }
+  await loadHistory(); track(id);
 }
-
-// drag the handle: pointer events, sync via requestAnimationFrame against the
-// riff (right) video currentTime so original stays in lockstep
-document.addEventListener('pointermove', e=>{
-  const cmp = document.getElementById('cmp');
-  if(!cmp || !window._drag) return;
-  const r = cmp.getBoundingClientRect();
-  let x = Math.max(0, Math.min(r.width, e.clientX - r.left));
-  document.getElementById('handle').style.left = x + 'px';
-  const pct = (x / r.width) * 100;
-  cmp.querySelector('.after video').style.clipPath = `inset(0 0 0 ${pct}%)`;
+async function hideJob(id){
+  const r=await fetch(`/api/jobs/${id}/hide`,{method:'POST'}); if(r.ok){ if(activeId===id){activeEl.innerHTML='';activeId=null;} await loadHistory(); }
+}
+async function deleteJob(id){
+  if(!confirm('Delete this completed job and its files?'))return;
+  const r=await fetch(`/api/jobs/${id}/delete`,{method:'POST'});
+  if(!r.ok){alert('Could not delete: '+await r.text());return;}
+  if(activeId===id){activeEl.innerHTML='';activeId=null;} await loadHistory();
+}
+// Drag the handle while keeping both video elements in lockstep.
+document.addEventListener('pointermove',e=>{
+  const cmp=document.getElementById('cmp'); if(!cmp||!window._drag)return;
+  const r=cmp.getBoundingClientRect(),x=Math.max(0,Math.min(r.width,e.clientX-r.left));
+  document.getElementById('handle').style.left=x+'px'; cmp.querySelector('.after video').style.clipPath=`inset(0 0 0 ${(x/r.width)*100}%)`;
 });
-document.addEventListener('pointerdown', e=>{
-  if (e.target.id==='handle' || e.target.id==='cmp') window._drag = true;
-});
-document.addEventListener('pointerup', ()=>{ window._drag = false; });
-
-// keep left vid in sync with the right
-setInterval(()=>{
-  const o = document.getElementById('orig'), r = document.getElementById('riff');
-  if(o && r && Math.abs(o.currentTime - r.currentTime) > 0.1){
-    o.currentTime = r.currentTime;
-    if(o.paused && !r.paused) o.play();
-    if(!o.paused && r.paused) o.pause();
-  }
-}, 120);
-
+document.addEventListener('pointerdown',e=>{if(e.target.id==='handle'||e.target.id==='cmp')window._drag=true});
+document.addEventListener('pointerup',()=>{window._drag=false});
+setInterval(()=>{const o=document.getElementById('orig'),r=document.getElementById('riff');if(o&&r&&Math.abs(o.currentTime-r.currentTime)>.1){o.currentTime=r.currentTime;if(o.paused&&!r.paused)o.play();if(!o.paused&&r.paused)o.pause()}},120);
+loadProviders().catch(e=>{pickerNote.textContent='Provider list unavailable.'});
 loadHistory();
 </script>
 </body>

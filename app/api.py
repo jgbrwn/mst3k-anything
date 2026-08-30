@@ -7,6 +7,7 @@ Config comes from the project .env via the mst3k package.
 """
 import json
 import queue
+import shutil
 import sqlite3
 import sys
 import time
@@ -42,9 +43,16 @@ def init_db() -> None:
         source TEXT NOT NULL, slug TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'queued',
         created REAL, updated REAL, error TEXT,
-        video TEXT, srt TEXT, riffs TEXT
+        video TEXT, srt TEXT, riffs TEXT,
+        provider TEXT, model TEXT, hidden INTEGER DEFAULT 0
       );
     """)
+    # Keep existing databases compatible with the current job shape.
+    for column in ("provider TEXT", "model TEXT", "hidden INTEGER DEFAULT 0"):
+        try:
+            con.execute(f"ALTER TABLE jobs ADD COLUMN {column}")
+        except sqlite3.OperationalError:
+            pass
     # recover jobs interrupted by a restart
     con.execute("UPDATE jobs SET status='failed', error='server restarted' "
                 "WHERE status='running'")
@@ -75,6 +83,10 @@ async def run_job(jid: int) -> None:
     job_dir.mkdir(parents=True, exist_ok=True)
     logpath = job_dir / "run.log"
     env = {"PYTHONPATH": str(ROOT / "src")}
+    if row["provider"]:
+        env["MST3K_PROVIDER"] = row["provider"]
+    if row["model"]:
+        env["MST3K_MODEL"] = row["model"]
     with open(logpath, "w") as log:
         p = await asyncio.create_subprocess_exec(
             PE, "-m", "mst3k.cli", "render", row["source"],
@@ -90,22 +102,67 @@ async def run_job(jid: int) -> None:
         _set(jid, status="failed", error=err)
 
 
-# --- routes ---------------------------------------------------------------
+@app.get("/api/providers")
+def provider_list():
+    from mst3k import providers
+    table = providers.load_providers()
+    specs = (
+        ("hyper", "Hyper", "qwen3.8-flash"),
+        ("neuralwatt", "Neuralwatt", "kimi-k3-fast"),
+        ("openrouter", "OpenRouter", None),
+    )
+    result = []
+    for pid, label, fallback_model in specs:
+        row = table.get(pid, {})
+        model = row.get("default_model") if pid != "openrouter" else None
+        model = model or fallback_model
+        base = row.get("base_url", "")
+        base = base.split("://", 1)[-1].split("/", 1)[0]
+        result.append({"id": pid,
+                       "label": f"{label} ({model})" if model else label,
+                       "model": model, "base": base})
+    return {"providers": result}
+
+
+@app.get("/api/providers/openrouter/models")
+def openrouter_model_list():
+    from mst3k import providers
+    try:
+        return [{"id": m["id"], "name": m.get("name") or m["id"],
+                 "context_length": m.get("context_length", 0)}
+                for m in providers.openrouter_models()]
+    except Exception as exc:
+        raise HTTPException(502, f"could not load OpenRouter models: {exc}")
+
+
 @app.post("/api/jobs")
 async def create_job(req: Request):
     body = await req.json()
-    src = (body.get("source") or "").strip()
+    src = (body.get("url") or body.get("source") or "").strip()
     if not src:
-        raise HTTPException(400, "source is required")
+        raise HTTPException(400, "url is required")
+    provider = body.get("provider") or "hyper"
+    allowed = {"hyper", "neuralwatt", "openrouter"}
+    if provider not in allowed:
+        raise HTTPException(400, "provider must be hyper, neuralwatt, or openrouter")
+    model = body.get("model")
+    if model is not None:
+        if not isinstance(model, str):
+            raise HTTPException(400, "model must be a string")
+        model = model.strip() or None
+    if provider == "openrouter" and model and "/" not in model:
+        raise HTTPException(400, "OpenRouter model must include a provider slash (provider/model)")
     from mst3k.ingest import slugify
     slug = slugify(src)
+    now = time.time()
     con = db()
     cur = con.execute(
-        "INSERT INTO jobs(source, slug, status, created, updated) VALUES(?,?, 'queued', ?, ?)",
-        (src, slug, time.time(), time.time()))
+        "INSERT INTO jobs(source, slug, status, created, updated, provider, model) "
+        "VALUES(?,?, 'queued', ?, ?, ?, ?)",
+        (src, slug, now, now, provider, model))
     jid = cur.lastrowid; con.commit(); con.close()
     _proc.put(jid)
-    return {"id": jid, "slug": slug, "status": "queued"}
+    return {"id": jid, "slug": slug, "status": "queued", "provider": provider, "model": model}
 
 
 @app.get("/api/jobs/{jid}")
@@ -123,7 +180,8 @@ def get_job(jid: int):
 def list_jobs():
     con = db()
     rows = con.execute(
-        "SELECT id, source, status, created FROM jobs ORDER BY id DESC LIMIT 50").fetchall()
+        "SELECT id, source, status, created, updated, provider, model "
+        "FROM jobs WHERE COALESCE(hidden, 0)=0 ORDER BY id DESC LIMIT 50").fetchall()
     con.close()
     return [dict(r) for r in rows]
 
@@ -140,13 +198,37 @@ async def events(jid: int):
             lines = log.read_text().splitlines() if log.exists() else []
             stage = next((l[1:l.index("]")] for l in reversed(lines)
                           if l.startswith("[") and "]" in l), None)
-            yield f"data: {json.dumps({'status': row['status'], 'stage': stage})}\n\n"
+            tail = lines[-80:]
+            yield f"data: {json.dumps({'status': row['status'], 'stage': stage, 'log': tail})}\n\n"
             if row["status"] in ("done", "failed"):
                 yield "event: close\ndata: {}\n\n"; return
             await asyncio.sleep(1)
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+@app.post("/api/jobs/{jid}/hide")
+def hide_job(jid: int):
+    con = db()
+    cur = con.execute("UPDATE jobs SET hidden=1, updated=? WHERE id=?", (time.time(), jid))
+    con.commit(); con.close()
+    if not cur.rowcount:
+        raise HTTPException(404, "no such job")
+    return {"id": jid, "hidden": True}
+
+
+@app.post("/api/jobs/{jid}/delete")
+def delete_job(jid: int):
+    con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+    if not row:
+        con.close()
+        raise HTTPException(404, "no such job")
+    if row["status"] in ("queued", "running"):
+        con.close()
+        raise HTTPException(409, "cannot delete a queued or running job")
+    con.execute("DELETE FROM jobs WHERE id=?", (jid,))
+    con.commit(); con.close()
+    shutil.rmtree(ROOT / "jobs" / row["slug"], ignore_errors=True)
+    return {"id": jid, "deleted": True}
 @app.get("/api/jobs/{jid}/riffs")
 def get_riffs(jid: int):
     """The writer output before fit — for in-browser editing."""
