@@ -10,6 +10,21 @@ def build(job: dict, placements: list[dict]) -> dict:
     out = job["dir"] / "final.mp4"
     srt = job["dir"] / "riffs.srt"
 
+    # theater overlay: animated webm if enabled, else static PNG, else none
+    from .theater import make_animated_theater, make_theater
+    png = job["dir"] / "theater.png"
+    src_w = job["frame_width"]
+    overlay_src = None
+    if job.get("animated_overlay"):
+        anim = job["dir"] / "theater_anim.webm"
+        if make_animated_theater(job, anim, frames=16, width=src_w).exists():
+            overlay_src = anim
+    if overlay_src is None:
+        # static fallback (fast, single-frame PNG)
+        if not png.exists():
+            make_theater(png, src_w)
+        overlay_src = png
+
     # --- SRT of the riff track (read-along / verify artifact) ---
     def ts(s):
         h, rem = divmod(s, 3600)
@@ -23,11 +38,12 @@ def build(job: dict, placements: list[dict]) -> dict:
     if not placements:
         # no riffs survived: still ship the overlaid video
         cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(job["source"])]
-        vf = ""
-        if (job["dir"] / "theater.png").exists():
-            vf = f"[0:v][1:v]overlay=0:H-h[vout]"
-            cmd += ["-i", str(job["dir"] / "theater.png"), "-filter_complex", vf,
-                    "-map", "[vout]", "-map", "0:a?"]
+        if overlay_src:
+            vf = "[0:v][1:v]overlay=0:H-h[vout]"
+            cmd += ["-stream_loop", "-1", "-i", str(overlay_src), "-filter_complex", vf]
+            if overlay_src.suffix == ".webm":
+                cmd += ["-shortest"]  # stop when the source (non-looped) ends
+            cmd += ["-map", "[vout]", "-map", "0:a?"]
         else:
             cmd += ["-c", "copy"]
         cmd.append(str(out))
@@ -42,9 +58,11 @@ def build(job: dict, placements: list[dict]) -> dict:
     for p in placements:
         inputs += ["-i", str(p["wav"])]
     tidx = None
-    if has_theater:
+    if overlay_src:
         tidx = len(placements) + 1
-        inputs += ["-i", str(theater)]
+        if overlay_src.suffix == ".webm":
+            inputs += ["-stream_loop", "-1"]
+        inputs += ["-i", str(overlay_src)]
 
     parts = []
     for i, p in enumerate(placements, start=1):
@@ -60,17 +78,19 @@ def build(job: dict, placements: list[dict]) -> dict:
     parts.append(f"[sc]asplit=2[sc_d][sc_mix]")
     parts.append(f"[a1][sc_d]sidechaincompress=threshold=-30dB:ratio=6:attack=80:release=400:makeup=1.0[ducked]")
     parts.append(f"[ducked][sc_mix]amix=inputs=2:normalize=0[aout]")
-    if has_theater:
+    if overlay_src:
         parts.append(f"[0:v][{tidx}:v]overlay=0:H-h[vout]")
 
     fc = ";".join(parts)
     cmd = ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", fc]
-    if has_theater:
-        cmd += ["-map", "[vout]"]
+    if overlay_src:
+        cmd += ["-map", "[vout]", "-shortest"]
     else:
         cmd += ["-map", "0:v"]
+    if overlay_src and overlay_src.suffix == ".webm":
+        cmd += ["-shortest"]
     cmd += ["-map", "[aout]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", str(job["crf"]),
-            "-c:a", "aac", "-b:a", "128k", "-shortest", str(out)]
+            "-c:a", "aac", "-b:a", "128k", str(out)]
     subprocess.run(cmd, check=True)
     return {"video": out, "srt": srt}

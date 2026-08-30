@@ -42,6 +42,7 @@ DEFAULTS = {
     # media
     "frame_width": 640,
     "crf": 22,
+    "animated_overlay": False,        # re-encode cost; static by default; opt-in
 }
 
 
