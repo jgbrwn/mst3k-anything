@@ -46,19 +46,20 @@ def build(job: dict, placements: list[dict]) -> dict:
         tidx = len(placements) + 1
         inputs += ["-i", str(theater)]
 
-    # commas inside between() would split the filter chain in filter_complex,
-    # so escape them \,
-    ec = "\\,"
     parts = []
-    duck_expr = "1.0"
     for i, p in enumerate(placements, start=1):
         delay_ms = int(p["start"] * 1000)
-        parts.append(f"[{i}:a]adelay={delay_ms}|{delay_ms},volume={job['riff_gain']:.2f}[r{i}]")
-        t0, t1 = p["start"], p["start"] + p["duration"] + 0.15
-        duck_expr += f"-{job['duck_amount']:.2f}*between(t{ec}{t0:.3f}{ec}{t1:.3f})"
-    parts.append(f"[0:a]volume='{duck_expr}':eval=1[base]")
-    mix_inputs = "[base]" + "".join(f"[r{i}]" for i in range(1, len(placements) + 1))
-    parts.append(f"{mix_inputs}amix=inputs={len(placements)+1}:normalize=0[aout]")
+        parts.append(
+            f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"adelay={delay_ms}|{delay_ms},volume={job['riff_gain']:.2f}[r{i}]")
+    # sidechain ducking: riffs (concatenated) drive a compressor that pushes
+    # the original track down while a riff is active, then recovers smoothly
+    riff_inputs = "".join(f"[r{i}]" for i in range(1, len(placements) + 1))
+    parts.append(f"{riff_inputs}amix=inputs={len(placements)}:normalize=0[sc]")
+    parts.append(f"[0:a]anull[a1]")
+    parts.append(f"[sc]asplit=2[sc_d][sc_mix]")
+    parts.append(f"[a1][sc_d]sidechaincompress=threshold=-30dB:ratio=6:attack=80:release=400:makeup=1.0[ducked]")
+    parts.append(f"[ducked][sc_mix]amix=inputs=2:normalize=0[aout]")
     if has_theater:
         parts.append(f"[0:v][{tidx}:v]overlay=0:H-h[vout]")
 
