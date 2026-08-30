@@ -28,6 +28,15 @@ DEFAULTS = {
     "words_per_second": 2.6,
     "max_tempo_stretch": 1.12,
     "max_riffs": 400,
+    # riff-window detection
+    "target_riff_count": 6,
+    "silence_ratio_ok": 0.04,
+    "min_silence_frac": 0.5,
+    "moment_win_sec": 1.6,
+    "moment_hop_sec": 0.8,
+    "speech_noise_db": "-40dB",
+    "speech_dur": 0.25,
+    "min_riff_space_sec": 10.0,
     # media
     "frame_width": 640,
     "crf": 22,

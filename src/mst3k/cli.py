@@ -32,9 +32,10 @@ def cmd_render(args) -> None:
 
     # 2 analyze
     gaps = step("gaps", lambda: analyze.find_gaps(job))
-    print(f"    {len(gaps)} riff windows")
+    kinds = "+".join(sorted({g["kind"] for g in gaps}))
+    print(f"    {len(gaps)} riff windows ({kinds or 'none'})")
     if not gaps:
-        print("No usable silence found. (Scene-cut anchoring is v1.1.)")
+        print("No usable riff windows (neither silence nor a quiet moment).")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
 
@@ -55,15 +56,14 @@ def cmd_render(args) -> None:
                 continue
             res = voice.synthesize(job, {**r, "_gap": g})
             if res and res["ok"]:
-                out.append({**r, "start": g["start"] + job["margin"],
+                start = (g["start"] + job["margin"]) if g.get("at") == "gap_start" else (
+                    (g["start"] + g["end"]) / 2 - res["duration"] / 2)
+                out.append({**r, "start": round(start, 3),
                             "wav": res["path"], "duration": res["duration"]})
             else:
                 print(f"    drop gap{r['gap']}: doesn't fit")
         return out
     placements = step("synthesize+fit", synth_all)
-    if not placements:
-        print("No riffs fit the silence windows. Try a longer/slower video.")
-        sys.exit(0)
 
     # 6 theater overlay + mix
     step("overlay", lambda: theater.make_theater(job_dir / "theater.png", meta["width"]))
