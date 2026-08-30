@@ -1,24 +1,3 @@
-.player-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:60;display:flex;align-items:center;justify-content:center}
-.player-overlay video{max-width:96vw;max-height:92vh}
-.player-close{position:absolute;top:.5rem;right:.5rem;font-size:2rem;color:#fff;background:none;border:none;cursor:pointer}
-@media(max-width:520px){.player-overlay video{max-width:100vw;max-height:88vh}}
-</style>
-<script>
-function playVideo(id){
-  closePlayer();
-  const div=document.createElement('div');
-  div.className='player-overlay'; div.id='playerOverlay';
-  div.innerHTML=`
-    <button class="player-close" onclick="closePlayer()" aria-label="Close">×</button>
-    <video controls autoplay playsinline src="/api/jobs/${id}/video"></video>`;
-  document.body.appendChild(div);
-}
-function closePlayer(){
-  const p=document.getElementById('playerOverlay'); if(p){p.querySelector('video').pause();p.remove();}
-}
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
-</script>
-<style>
 <!doctype html>
 <html lang="en">
 <head>
@@ -95,6 +74,13 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
     .detail-head, .row-head { align-items:flex-start; flex-direction:column; gap:.55rem }
     .row-actions { width:100%; justify-content:flex-start }
   }
+
+.player-overlay { position:fixed; inset:0; background:rgba(0,0,0,.95); z-index:60;
+  display:flex; align-items:center; justify-content:center }
+.player-overlay video { max-width:96vw; max-height:92vh }
+.player-close { position:absolute; top:.5rem; right:.5rem; font-size:2rem; color:#fff;
+  background:none; border:none; cursor:pointer }
+@media (max-width:520px) { .player-overlay video { max-width:100vw; max-height:88vh } }
 </style>
 </head>
 <body>
@@ -122,7 +108,22 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
   <div id="active"></div>
   <div class="hist"><h2>History</h2><div id="list"></div></div>
 </div>
-<script>// player helpers wired above
+<script>
+
+
+function playVideo(id){
+  closePlayer();
+  const div=document.createElement('div');
+  div.className='player-overlay'; div.id='playerOverlay';
+  div.innerHTML=`<button class="player-close" onclick="closePlayer()">×</button>
+    <video controls autoplay playsinline src="/api/jobs/${id}/video"></video>`;
+  document.body.appendChild(div);
+}
+function closePlayer(){
+  const p=document.getElementById('playerOverlay');
+  if(p){p.querySelector('video')?.pause();p.remove();}
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
 const listEl = document.getElementById('list');
 const activeEl = document.getElementById('active');
 const providerEl = document.getElementById('provider');
@@ -135,9 +136,14 @@ const pickerNote = document.getElementById('pickerNote');
 let providers = [], jobs = [], activeId = null, trackToken = 0, orLoaded = false;
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s == null ? '' : String(s); return d.innerHTML }
-function titleFor(source){
-  try { const u=new URL(source); const tail=u.pathname.split('/').filter(Boolean).pop(); return tail || u.hostname }
-  catch (_) { return source.split('/').filter(Boolean).pop() || source }
+// Return a human title; prefers the title-based slug if ingest renamed the dir.
+function titleFor(j){
+  const s = (j.slug || '');
+  if (s && !/^https-|^youtu/.test(s)) return s.replace(/-/g,' ');
+  // fall back to somet youtu.be tail
+  const src=j.source||'';
+  try { const u=new URL(src); const tail=u.pathname.split('/').filter(Boolean).pop(); return tail || u.hostname }
+  catch (_) { return src.split('/').filter(Boolean).pop() || 'video' }
 }
 function ago(t){
   const sec=Math.max(0, Math.floor(Date.now()/1000-(Number(t)||0)));
@@ -192,7 +198,7 @@ async function loadHistory(autoTrack=true){
   listEl.innerHTML=jobs.map(j=>{
     const terminal=j.status==='done'||j.status==='failed';
     return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
-      <div class="title" title="${esc(j.source)}">${esc(titleFor(j.source))}</div>
+      <div class="title" title="${esc(j.source)}">${esc(titleFor(j))}</div>
       <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}${j.judge_provider?' · judge on '+esc(j.judge_provider):''}</div>
     </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
       <button class="btn2" onclick="track(${j.id})">View</button>
@@ -246,7 +252,7 @@ async function renderActive(id,d,token){
   if(token!==trackToken) return;
   let j=jobs.find(x=>x.id===id);
   if(!j){ const r=await fetch(`/api/jobs/${id}`); if(!r.ok)return; j=await r.json(); }
-  let html=`<div class="card"><div class="detail-head"><div style="min-width:0"><div class="title">${esc(titleFor(j.source))}</div><div class="src">${esc(j.source)}</div></div>
+  let html=`<div class="card"><div class="detail-head"><div style="min-width:0"><div class="title">${esc(titleFor(j))}</div><div class="src">${esc(j.source)}</div></div>
     <span class="status st-${esc(d.status)}">${esc(d.status)}</span></div>`;
   if(d.status==='running' && d.progress){
     const p=d.progress;
@@ -266,8 +272,7 @@ async function renderActive(id,d,token){
     html+=`<p class="hint">Drag the handle to compare the original and riffed video.</p>
       <div class="compare" id="cmp"><video controls muted src="/api/jobs/${id}/video" id="orig"></video>
       <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div><div class="handle" id="handle"></div></div>
-      <p><button class="btn2" onclick="playVideo(${id})">▶ Play</button>
-      <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
+      <p><button class="btn2" onclick="playVideo(${id})">▶ Play</button> <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
       <p class="hint">Re-edit the lines below (cheap re-render, keeps media):</p>
       <textarea id="riffsBox">${esc(value)}</textarea>
       <button class="btn2" id="rerenderBtn" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;

@@ -48,6 +48,10 @@ def cmd_render(args) -> None:
             job_dir.rename(new_dir)
             slug, job_dir = title_slug, new_dir
             job["dir"] = job_dir
+            # leave a marker so the API's delete glob can find the new dir
+            (job["jobs_dir"] / f"{slug}.renamed-from").write_text(str(job_dir.name))
+            # also drop a back-ref so the original url slug resolves too
+            (job["jobs_dir"] / f"{job_dir.name}.renamed-from").write_text(ingest.slugify(args.source))
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 

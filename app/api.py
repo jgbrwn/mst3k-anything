@@ -216,7 +216,7 @@ def get_job(jid: int):
 def list_jobs():
     con = db()
     rows = con.execute(
-        "SELECT id, source, status, created, updated, provider, model, "
+        "SELECT id, source, slug, status, created, updated, provider, model, "
         "judge_provider, judge_model "
         "FROM jobs WHERE COALESCE(hidden, 0)=0 ORDER BY id DESC LIMIT 50").fetchall()
     con.close()
