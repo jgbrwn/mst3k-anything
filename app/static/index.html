@@ -40,6 +40,11 @@
   a.dl { color:var(--amber); font-size:.9rem; margin-right:1rem }
   .err { color:#e07b6a; font-size:.8rem; white-space:pre-wrap;
     max-height:150px; overflow:auto; margin-top:.5rem }
+  textarea { width:100%; height:150px; background:#0a0a0e; color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:.6rem;
+    font-family:ui-monospace,monospace; font-size:.85rem; margin-top:.6rem }
+  .btn2 { background:#2a2a36; color:var(--ink); padding:.45rem .8rem;
+    border-radius:6px; border:1px solid var(--line); cursor:pointer; font-size:.85rem }
   .hist h2 { font-family:Georgia,serif; font-size:1.1rem; color:var(--dim);
     margin:1.6rem 0 .6rem }
   .row { display:flex; justify-content:space-between; align-items:center;
@@ -101,15 +106,27 @@ async function renderActive(id,d){
   let html = `<div class="card"><span class="status st-${d.status}">${d.status}</span>`;
   if (d.stage && d.status==='running') html += `<div class="stage">▸ ${esc(d.stage)}</div>`;
   if (d.status==='done'){
+    const riffs = await (await fetch(`/api/jobs/${id}/riffs`)).json();
     html += `<video controls src="/api/jobs/${id}/video"></video>` +
       `<p><a class="dl" href="/api/jobs/${id}/video" download>download mp4</a>` +
-      `<a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>`;
+      `<a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>` +
+      `<p style="color:var(--dim);font-size:.85rem">Re-edit the lines below (cheap re-render, keeps media):</p>` +
+      `<textarea id="riffsBox">${esc(JSON.stringify(riffs, null, 2))}</textarea>` +
+      `<button class="btn2" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
   }
   if (d.status==='failed'){
     const j = await (await fetch(`/api/jobs/${id}`)).json();
     html += `<div class="err">${esc(j.error||'unknown error')}</div>`;
   }
   activeEl.innerHTML = html + `</div>`;
+}
+
+async function rerender(id){
+  const body = document.getElementById('riffsBox').value;
+  const r = await fetch(`/api/jobs/${id}/rerender`,{method:'POST',
+    headers:{'Content-Type':'application/json'}, body});
+  if(!r.ok){ alert('Invalid JSON: '+await r.text()); return; }
+  track(id);
 }
 
 loadHistory();

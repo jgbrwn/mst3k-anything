@@ -147,6 +147,18 @@ async def events(jid: int):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+@app.get("/api/jobs/{jid}/riffs")
+def get_riffs(jid: int):
+    """The writer output before fit — for in-browser editing."""
+    con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
+    if not row:
+        raise HTTPException(404, "no such job")
+    riffs = ROOT / "jobs" / row["slug"] / "riffs.json"
+    if not riffs.exists():
+        raise HTTPException(404, "riffs not written yet")
+    return PlainTextResponse(riffs.read_text(), media_type="application/json")
+
+
 @app.get("/api/jobs/{jid}/{kind}")
 def artifact(jid: int, kind: str):
     con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
@@ -158,6 +170,41 @@ def artifact(jid: int, kind: str):
     mt = "video/mp4" if kind == "video" else "text/plain"
     return FileResponse(col, media_type=mt,
                         filename=Path(col).name)
+
+
+@app.post("/api/jobs/{jid}/rerender")
+async def rerender(jid: int, req: Request):
+    """Accept edited riffs.json, drop downstream caches, re-queue a cheap render."""
+    con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
+    if not row:
+        raise HTTPException(404, "no such job")
+    if row["status"] == "running":
+        raise HTTPException(409, "job is running; wait for it to finish")
+    body = await req.body()
+    try:
+        parsed = json.loads(body)
+        if not isinstance(parsed, list):
+            raise ValueError("riffs.json must be a JSON array")
+    except Exception as e:
+        raise HTTPException(400, f"invalid riffs.json: {e}")
+    job_dir = ROOT / "jobs" / row["slug"]
+    # cheap: upstream artifacts (gaps, frames, profile) survive; downstream drop
+    for name in ("riffs.json", "theater.png"):
+        p = job_dir / name
+        if p.exists():
+            p.unlink()
+    for d in (job_dir / "tts", job_dir / "segs"):
+        if d.exists():
+            import shutil
+            shutil.rmtree(d, ignore_errors=True)
+    # delete any prior outputs so the CLI rebuilds them
+    for suffix in ("_riffed.mp4", "_riffs.srt", "final.mp4"):
+        p = job_dir / f"{row['slug']}{suffix}"
+        if p.exists():
+            p.unlink()
+    _set(jid, status="queued", video=None, srt=None, riffs=None)
+    _proc.put(jid)
+    return {"id": jid, "status": "queued"}
 
 
 import asyncio  # noqa: E402  (after subprocess-free module top for clarity)
