@@ -141,27 +141,6 @@ def _spread(anchors, target, gap_sec, duration):
     return picked
 
 
-def _fill_with_moments(audio, job, gaps, target, gap_sec, duration):
-    """Top up picks with moments ranked by RMS quietness. The frac gate is
-    dropped — refer to _detect_quiet_moments docstring; on narrated videos
-    every moment exceeds it."""
-    if len(gaps) >= target:
-        return gaps
-    final = _detect_quiet_moments(audio, job)
-    picked_set = {(g["start"], g["end"]) for g in gaps}
-    out = list(gaps)
-    for m in final:
-        if len(out) >= target:
-            break
-        if (m["start"], m["end"]) in picked_set:
-            continue
-        if any(not (m["end"] <= p["start"] or m["start"] >= p["end"]) for p in out):
-            continue
-        out.append(m)
-        out.sort(key=lambda g: g["start"])
-    return out
-
-
 def find_gaps(job: dict) -> list[dict]:
     cache = job["dir"] / "gaps.json"
     if cache.exists():
@@ -196,6 +175,16 @@ def find_gaps(job: dict) -> list[dict]:
     ideal  = max(1, int(duration / midpoint))
     ceiling= max(2, int(duration / pace["hi"]))
     target = max(1, int(min(max(len(sil_gaps), ceiling), ideal)))
+
+    # webui riff-density bias: 0..4 -> multiplier range
+    BIAS_MULT = [0.35, 0.6, 1.0, 1.5, 2.2]
+    try:
+        bias_idx = int(job.get("riff_density_bias", 2))
+    except (TypeError, ValueError):
+        bias_idx = 2
+    bias_idx = max(0, min(4, bias_idx))
+    target = max(1, int(round(target * BIAS_MULT[bias_idx])))
+
     if "target_riff_count" in job:  # .env safety cap
         target = min(target, int(job["target_riff_count"]))
     job["target_riff_count"] = target

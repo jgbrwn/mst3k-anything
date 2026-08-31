@@ -50,7 +50,8 @@ def init_db() -> None:
     """)
     # Keep existing databases compatible with the current job shape.
     for column in ("provider TEXT", "model TEXT", "hidden INTEGER DEFAULT 0",
-                   "judge_provider TEXT", "judge_model TEXT"):
+                   "judge_provider TEXT", "judge_model TEXT",
+                   "riff_density_bias INTEGER DEFAULT 2"):
         try:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {column}")
         except sqlite3.OperationalError:
@@ -110,6 +111,9 @@ async def run_job(jid: int) -> None:
         env["MST3K_JUDGE_PROVIDER"] = row["judge_provider"]
     if row["judge_model"]:
         env["MST3K_JUDGE_MODEL"] = row["judge_model"]
+    # density bias for this job (0..4 -> 0.35x..2.2x scaling)
+    if row["riff_density_bias"] is not None:
+        env["MST3K_RIFF_DENSITY_BIAS"] = str(row["riff_density_bias"])
     with open(logpath, "w") as log:
         p = await asyncio.create_subprocess_exec(
             PE, "-m", "mst3k.cli", "render", row["source"],
@@ -208,15 +212,22 @@ async def create_job(req: Request):
     if jprov == "openrouter" and jmodel and "/" not in jmodel:
         raise HTTPException(400, "OpenRouter judge_model must be provider/model")
 
+    # optional density bias: 0=extra-low,1=low,2=default,3=high,4=extra-high
+    bias = body.get("riff_density_bias")
+    try:
+        bias = max(0, min(4, int(bias if bias is not None else 2)))
+    except (TypeError, ValueError):
+        bias = 2
+
     from mst3k.ingest import slugify
     slug = slugify(src)
     now = time.time()
     con = db()
     cur = con.execute(
         "INSERT INTO jobs(source, slug, status, created, updated, provider, model, "
-        "judge_provider, judge_model) "
-        "VALUES(?,?, 'queued', ?, ?, ?, ?, ?, ?)",
-        (src, slug, now, now, provider, model, jprov, jmodel))
+        "judge_provider, judge_model, riff_density_bias) "
+        "VALUES(?,?, 'queued', ?, ?, ?, ?, ?, ?, ?)",
+        (src, slug, now, now, provider, model, jprov, jmodel, bias))
     jid = cur.lastrowid; con.commit(); con.close()
     _proc.put(jid)
     return {"id": jid, "slug": slug, "status": "queued", "provider": provider, "model": model}

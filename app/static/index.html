@@ -17,7 +17,7 @@
     border-radius:3px; opacity:.8; box-shadow:0 0 24px #c0392b33 }
   h1 { font-family:Georgia,serif; letter-spacing:.03em; margin:.65em 0 .1em; font-size:2.1rem }
   .tag { color:var(--dim); margin:0 0 1.5rem }
-  form { display:grid; grid-template-columns:minmax(0,1fr) 190px auto; gap:.6rem; margin-bottom:1.4rem }
+  form { display:grid; grid-template-columns:minmax(0,1fr) 170px 170px 130px auto; gap:.6rem; margin-bottom:1.4rem }
   input, select { padding:.68rem .8rem; background:var(--panel); border:1px solid var(--line);
     border-radius:8px; color:var(--ink); font-size:.95rem; min-width:0 }
   input:focus, select:focus, textarea:focus { outline:2px solid #ffb45455; border-color:var(--amber) }
@@ -70,6 +70,7 @@
     form { grid-template-columns:1fr 1fr }
     form input[type=url] { grid-column:1 / -1 }
     form button { grid-column:2 }
+    form select:nth-of-type(3) { grid-column:1 / 3 }  /* density picker spans both cols on narrow */
     .model-wrap { grid-column:1 / -1; margin-top:-.2rem }
     .detail-head, .row-head { align-items:flex-start; flex-direction:column; gap:.55rem }
     .row-actions { width:100%; justify-content:flex-start }
@@ -93,6 +94,13 @@
     <select id="provider" aria-label="LLM provider"></select>
     <select id="judgeProvider" aria-label="Judge LLM provider">
       <option value="">Judge = same as writer</option>
+    </select>
+    <select id="riffDensity" aria-label="Riff density" title="How many riffs to write. The default picks a count based on video length + content type. Lower = sparser (trust the movie more), Higher = denser (more heckling).">
+      <option value="0">Extra sparse</option>
+      <option value="1">Sparse</option>
+      <option value="2" selected>Default</option>
+      <option value="3">Dense</option>
+      <option value="4">Extra dense</option>
     </select>
     <button id="submitBtn" type="submit">🎬 Riff it</button>
     <div id="modelWrap" class="model-wrap">
@@ -219,6 +227,8 @@ document.getElementById('f').addEventListener('submit',async e=>{
   const jp=judgeProviderEl.value;
   if(jp){ body.judge_provider=jp; }
   if(jp==='openrouter' && orJudgeModelEl.value.trim()) body.judge_model=orJudgeModelEl.value.trim();
+  const dens=parseInt(document.getElementById('riffDensity').value,10);
+  if(!Number.isNaN(dens) && dens!==2) body.riff_density_bias=dens;  // skip when default
   const btn=document.getElementById('submitBtn'); btn.disabled=true;
   try {
     const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

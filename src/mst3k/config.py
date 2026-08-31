@@ -63,7 +63,7 @@ DEFAULTS = {
     "speech_dur": 0.2,                # even 200ms at this level = audible
     "min_riff_space_sec": 10.0,
     "moment_relax_db": 3.0,          # moments must be *quieter* than median, not just not-loud
-    "max_speech_frac": 0.6,           # moment threshold; riff ducking handles the bleed          # reject moment windows >30% spoken         # riff at most (median + this) dB
+
     # media
     "frame_width": 640,
     "crf": 22,

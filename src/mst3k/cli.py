@@ -16,6 +16,13 @@ def cmd_render(args) -> None:
     local_yt = Path.home() / ".local" / "bin"
     if (local_yt / "yt-dlp").exists():
         os.environ["PATH"] = f"{local_yt}{os.pathsep}" + os.environ.get("PATH", "")
+    # optional density bias from api (submitted via UI)
+    bias = os.environ.get("MST3K_RIFF_DENSITY_BIAS")
+    if bias is not None:
+        try:
+            job["riff_density_bias"] = int(bias)
+        except ValueError:
+            pass
     job["jobs_dir"].mkdir(parents=True, exist_ok=True)
     slug = ingest.slugify(args.source)
     job_dir = job["jobs_dir"] / slug
