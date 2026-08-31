@@ -280,7 +280,7 @@ async function loadHistory(autoTrack=true){
     const terminal=j.status==='done'||j.status==='failed';
     return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
       <div class="title" title="${esc(j.source)}">${esc(titleFor(j))}</div>
-      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}${j.judge_provider?' · judge on '+esc(j.judge_provider)+' ('+esc(j.judge_model||'')+')':''}</div>
+      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider&&j.model?' · writer '+esc(j.provider)+' ('+esc(j.model)+')':''}${(j.judge_provider||j.provider)&&(j.judge_model||j.model)?' · judge '+esc(j.judge_provider||j.provider)+' ('+esc(j.judge_model||j.model)+')':''}</div>
     </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
       <button class="btn2" onclick="track(${j.id})">View</button>
       <button class="btn2" onclick="hideJob(${j.id})">Hide</button>

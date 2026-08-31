@@ -63,6 +63,20 @@ def init_db() -> None:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {column}")
         except sqlite3.OperationalError:
             pass
+    # Backfill provider-default model labels for rows created before the API
+    # started resolving them at submission time. NULL means "use provider default".
+    try:
+        from mst3k import providers as _providers
+        table = _providers.load_providers()
+        for pid, spec in table.items():
+            default = spec.get("default_model")
+            if default:
+                con.execute("UPDATE jobs SET model=? WHERE provider=? AND (model IS NULL OR model='')",
+                            (default, pid))
+                con.execute("UPDATE jobs SET judge_model=? WHERE judge_provider=? "
+                            "AND (judge_model IS NULL OR judge_model='')", (default, pid))
+    except Exception:
+        pass
     # recover jobs interrupted by a restart
     con.execute("UPDATE jobs SET status='failed', error='server restarted', process_pid=NULL "
                 "WHERE status='running'")
