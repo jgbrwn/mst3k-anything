@@ -91,7 +91,9 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
     win, hop = job["moment_win_sec"], job["moment_hop_sec"]
     lead = job.get("lead_in_sec", 0.5)
     out = []
-    for start in _frange(lead, max(lead, duration - win), hop):
+    if duration <= lead or duration - win < lead:
+        return out
+    for start in _frange(lead, duration - win, hop):
         end = min(start + win, duration)
         aseg = _seg(job, audio, start, end)
         if aseg is None: continue
@@ -242,7 +244,9 @@ def hot_moments(job: dict, audio: Path, k: int = 5) -> list[float]:
     duration = job["meta"]["duration"]
     win, hop = 1.6, 1.6
     scored = []
-    for start in _frange(0.5, max(0.5, duration - win), hop):
+    if duration <= 0.5 or duration - win < 0.5:
+        return []
+    for start in _frange(0.5, duration - win, hop):
         end = min(start + win, duration)
         aseg = _seg(job, audio, start, end)
         if aseg is None:

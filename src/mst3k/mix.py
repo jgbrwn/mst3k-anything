@@ -39,11 +39,15 @@ def build(job: dict, placements: list[dict]) -> dict:
         # no riffs survived: still ship the overlaid video
         cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(job["source"])]
         if overlay_src:
-            vf = "[0:v][1:v]overlay=0:H-h[vout]"
-            cmd += ["-stream_loop", "-1", "-i", str(overlay_src), "-filter_complex", vf]
+            # Both overlay variants must be bounded by the source duration.
+            # stream_loop=-1 without -shortest makes a static PNG render forever.
             if overlay_src.suffix == ".webm":
-                cmd += ["-shortest"]  # stop when the source (non-looped) ends
-            cmd += ["-map", "[vout]", "-map", "0:a?"]
+                cmd += ["-stream_loop", "-1"]
+            else:
+                cmd += ["-loop", "1"]
+            cmd += ["-i", str(overlay_src), "-filter_complex",
+                    "[0:v][1:v]overlay=0:H-h[vout]", "-map", "[vout]", "-map", "0:a?",
+                    "-shortest"]
         else:
             cmd += ["-c", "copy"]
         cmd.append(str(out))

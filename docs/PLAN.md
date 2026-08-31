@@ -42,10 +42,10 @@ agentic LLM stages (understand, write)**. That split drives the whole architectu
 │ 2 DECOMPOSE   audio extract · silencedetect gaps · scene detect ·      │
 │               keyframes per gap · transcript (subs else whisper)       │
 │ 3 UNDERSTAND  *LLM AGENT*: plot/characters/tone/campsites-for-jokes    │
-│ 4 WRITE       *LLM AGENT*: writers' room → riffs.json (structured)     │
-│ 5 FIT         TTS each line → measure → stretch/drop against budget    │
-│ 6 MIX         duck original during riffs · riffs +gain · overlay PNG   │
-│ 7 DELIVER     final mp4 · srt of riffs · share link                    │
+│ 4 WRITE       *LLM AGENT*: draft → judge/rewrite → approved riff set       │
+│ 5 FIT         TTS each line → measure → stretch/drop against budget       │
+│ 6 MIX         duck original during riffs · riffs +gain · overlay PNG     │
+│ 7 DELIVER     final mp4 · final riffs.srt · rendered riffs.json           │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,8 +97,8 @@ Batched writer calls (batches of ~6–10 gaps). Each request carries:
 - TTS each line (Pocket TTS), **measure** actual duration with ffprobe.
 - If spoken > budget: tempo-stretch up to ×1.12 (`atempo`), else **drop the riff**.
   A missing joke is acceptable; trampling the movie's next line is not.
-- Cache rendered lines keyed by (text, voice) — re-runs after hand-editing riffs.json
-  only re-speak changed lines.
+- Cache rendered lines keyed by (text, voice) — re-runs after hand-editing the final
+  rendered manifest only re-speak changed lines.
 
 ### Stage 6 — Mix & overlay
 - **Audio**: original track gets `volume=1−duck*between(t, riff_start, riff_end)`
@@ -112,7 +112,9 @@ Batched writer calls (batches of ~6–10 gaps). Each request carries:
 
 ### Stage 7 — Deliver
 - Final mp4 (copy video stream when possible, AAC audio), `riffs.srt` for reading along,
-  `riffs.json` for re-editing (edit → re-render only changed lines → cheap takes).
+  and `riffs.json` containing only the riffs that actually made it into that video.
+  Drafts and judge output are kept separately for debugging; editor submissions are
+  persisted as a private request manifest and bypass another writer pass.
 
 ---
 

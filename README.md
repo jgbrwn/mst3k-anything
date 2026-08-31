@@ -29,9 +29,15 @@ versus the riffed pass.
   by the line so re-rendered versions sound consistent. Expressiveness hints in the
   written line (`*word*`, trailing `...`, `!`, `?`) become audio coloration.
 - **Real-time log** — after submitting a URL the UI immediately shows a console
-  tailing the pipeline stage-by-stage. When done the video player appears.
-- **Edit + re-render** — open a finished job, edit the riffs.json, hit re-render; only
-  the TTS + mix re-runs (the expensive transcription/analysis stages cache).
+  tailing the pipeline stage-by-stage. It follows the newest output, briefly allows
+  manual scrolling, then returns to the live tail; failed-job logs remain visible.
+  When done the video player appears.
+- **Edit + re-render** — open a finished job, edit the final rendered riff manifest in
+  the browser, hit re-render; the submitted manifest is used directly (no fresh LLM
+  rewrite), while cached media analysis/transcription is retained.
+- **Stable job lifecycle** — each API submission gets a private work directory, while
+  the database slug becomes a human title slug after ingest. Repeated submissions of
+  the same video cannot overwrite each other's logs, PIDs, or outputs.
 - **Multi-provider LLM** — pick Hyper, Neuralwatt, or OpenRouter (full
   OpenRouter high-context multimodal picker included); per-job selectable.
 

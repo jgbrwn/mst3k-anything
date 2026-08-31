@@ -81,9 +81,16 @@ def write_riffs_with_review(job: dict, gaps: list[dict], profile: dict,
     """Two-pass write: draft -> judge -> rewrite rejected lines (once)."""
     from . import judge
     drafts = _write_drafts(job, gaps, profile, bundles,
-                          critique_context="")
+                           critique_context="")
     print(f"    [judge] reviewing {len(drafts)} drafts")
-    verdicts = judge.judge_riffs(job, drafts, bundles or [])
+    try:
+        verdicts = judge.judge_riffs(job, drafts, bundles or [])
+    except Exception as exc:
+        # QA is valuable but should not erase a usable writer result when a
+        # provider is temporarily unavailable after the draft succeeded.
+        print(f"    [judge] unavailable ({exc}); keeping drafts", flush=True)
+        verdicts = [{"gap": d["gap"], "verdict": "keep", "critique": "",
+                     "score": 5} for d in drafts]
     out = []
     for d, v in zip(drafts, verdicts):
         tag = f"gap{d['gap']:2d} score={v.get('score','?')}"
@@ -98,6 +105,10 @@ def write_riffs_with_review(job: dict, gaps: list[dict], profile: dict,
                 out.append(match)
                 continue
         out.append(d)
+    judged_path = job["dir"] / "judged_riffs.json"
+    tmp = judged_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(out, indent=2))
+    tmp.replace(judged_path)
     return out
 
 
@@ -122,7 +133,7 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
     if critique_context:
         cache = None  # rewrites bypass cache
     else:
-        cache = job["dir"] / "riffs.json"
+        cache = job["dir"] / "drafts.json"
         if cache.exists():
             return json.loads(cache.read_text())
     frames = job["dir"] / "frames"
@@ -224,7 +235,9 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
             out.append({"gap": int(r["gap"]), "speaker": "riffer",
                         "line": line, "words": words, "when": when})
     if cache is not None:
-        cache.write_text(json.dumps(out, indent=2))
+        tmp = cache.with_suffix(".tmp")
+        tmp.write_text(json.dumps(out, indent=2))
+        tmp.replace(cache)
     return out
 
 

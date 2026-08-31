@@ -10,6 +10,20 @@ from pathlib import Path
 from . import analyze, config as cfgmod, context, ingest, mix, transcribe, understand, voice, writer
 
 
+def write_rendered_manifest(job_dir: Path, placements: list[dict]) -> Path:
+    """Persist exactly the riffs that mix.build received, in timeline order."""
+    manifest = job_dir / "riffs.json"
+    rendered = [{"gap": p["gap"], "speaker": p.get("speaker", "riffer"),
+                 "line": p["line"], "words": p.get("words", len(p["line"].split())),
+                 "when": p.get("when", 0.0), "start": p["start"],
+                 "duration": p["duration"]}
+                for p in sorted(placements, key=lambda p: p["start"])]
+    tmp = manifest.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rendered, indent=2))
+    tmp.replace(manifest)
+    return manifest
+
+
 def cmd_render(args) -> None:
     job = cfgmod.load()
     # prefer recent yt-dlp in ~/.local/bin over any system copy; add to PATH
@@ -24,10 +38,14 @@ def cmd_render(args) -> None:
         except ValueError:
             pass
     job["jobs_dir"].mkdir(parents=True, exist_ok=True)
-    slug = ingest.slugify(args.source)
-    job_dir = job["jobs_dir"] / slug
-    job_dir.mkdir(exist_ok=True)
+    url_slug = ingest.slugify(args.source)
+    # API jobs get an immutable, per-row work_dir. Direct CLI invocations
+    # retain the URL-slug directory as their private workspace.
+    requested_dir = os.environ.get("MST3K_JOB_DIR")
+    job_dir = Path(requested_dir).resolve() if requested_dir else job["jobs_dir"] / url_slug
+    job_dir.mkdir(parents=True, exist_ok=True)
     job["dir"] = job_dir
+    artifact_slug = url_slug
     # persist our PID for cancel-from-web killability
     (job_dir / "pid").write_text(str(os.getpid()))
     # start our own process group so os.killpg in cancel hits us + ffmpeg+pockettts
@@ -46,33 +64,7 @@ def cmd_render(args) -> None:
     # 1 ingest
     src, meta = step("ingest", lambda: ingest.ingest(args.source, job))
     job["source"], job["meta"] = src, meta
-
-    # settle on a title-based slug once we have metadata
-    title_slug = ingest.slugify(meta.get("title") or slug)
-    if title_slug != slug:
-        new_dir = job["jobs_dir"] / title_slug
-        if new_dir.exists():
-            shutil.rmtree(new_dir)
-        job_dir.rename(new_dir)
-        slug, job_dir = title_slug, new_dir
-        job["dir"] = job_dir
-        # Rebind source path — files inside moved with the dir
-        sp = Path(src)
-        if str(sp).startswith(str(job["jobs_dir"])):
-            job["source"] = job_dir / sp.name
-            src = job["source"]
-        # leave markers so the API's delete glob can find either dir
-        #   .renamed-from: original slug -> final title slug   (back pointer)
-        #   .renamed-to:   original slug -> final title slug   (forward pointer -- allows api to find artifacts)
-        url_slug = ingest.slugify(args.source)
-        (job["jobs_dir"] / f"{url_slug}.renamed-from").write_text(str(job_dir.name))
-        (job["jobs_dir"] / f"{url_slug}.renamed-to").write_text(str(job_dir.name))
-        # self-marker removal: prevent drivin-.renamed-to -> drivin cycle
-        for sm in (f"{slug}.renamed-from", f"{slug}.renamed-to",
-                  f"{job_dir.name}.renamed-from", f"{job_dir.name}.renamed-to"):
-            p = job["jobs_dir"] / sm
-            if p.exists() and sm.startswith(f"{job_dir.name}."):
-                p.unlink()
+    artifact_slug = ingest.slugify(meta.get("title") or url_slug)
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 
@@ -103,11 +95,43 @@ def cmd_render(args) -> None:
     (job_dir / "bundles.json").write_text(json.dumps(
         [{k: v for k, v in b.items() if k != "frames"} for b in bundles], indent=1))
 
-    # 5 write (context-driven) with head-writer desk review pass
-    riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
+    # 5 write: an editor rerender supplies an exact manifest and must bypass
+    # the LLM; normal jobs use the writer + judge pipeline.
+    requested_path = job_dir / "requested_riffs.json"
+    if requested_path.exists():
+        print("[write] ...", flush=True)
+        try:
+            requested = json.loads(requested_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"invalid requested_riffs.json: {exc}")
+        gap_by_id = {g["id"]: g for g in gaps}
+        riffs = []
+        for item in requested:
+            if not isinstance(item, dict):
+                continue
+            try:
+                gid = int(item.get("gap"))
+            except (TypeError, ValueError):
+                continue
+            if gid not in gap_by_id:
+                continue
+            line = str(item.get("line") or "").strip()
+            if not line:
+                continue
+            try:
+                when = float(item.get("when", 0.0))
+            except (TypeError, ValueError):
+                when = 0.0
+            riffs.append({"gap": gid, "speaker": str(item.get("speaker") or "riffer"),
+                          "line": line, "words": len(line.split()), "when": when})
+        print(f"[write] done in 0.0s", flush=True)
+    else:
+        riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
     kept = sum(1 for r in riffs if r.get("_kept_from_rewrite"))
     note = f"{len(riffs)} riffs"
     if kept: note += f" ({kept} improved by judge rewrites)"
+    if requested_path.exists():
+        print(f"    using editor manifest: {len(riffs)} riffs")
     print(f"    {note}")
 
     # 5 synthesize + fit
@@ -157,11 +181,17 @@ def cmd_render(args) -> None:
 
     out_dir = Path(args.out).resolve() if args.out else job_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    final = out_dir / f"{slug}_riffed.mp4"
+    final = out_dir / f"{artifact_slug}_riffed.mp4"
+    final_srt = out_dir / f"{artifact_slug}_riffs.srt"
     shutil.copy2(built["video"], final)
-    shutil.copy2(built["srt"], out_dir / f"{slug}_riffs.srt")
+    shutil.copy2(built["srt"], final_srt)
+    # This is the editor/API source of truth: only riffs that actually made it
+    # into the rendered mix, with their final placement/timing.
+    write_rendered_manifest(job_dir, placements)
+    if requested_path.exists():
+        requested_path.unlink()
     print(f"\nDONE: {final}")
-    print(f"      {out_dir / (slug + '_riffs.srt')}")
+    print(f"      {final_srt}")
 
 
 def main() -> None:

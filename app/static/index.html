@@ -66,18 +66,19 @@
   .row { padding:.75rem .2rem; border-bottom:1px solid var(--line) }
   .row-actions { display:flex; align-items:center; gap:.45rem; flex:none }
   .empty { color:var(--dim); border:1px dashed var(--line); border-radius:10px; padding:1.25rem; text-align:center }
+  .writer-line { grid-column:1 / -1; display:flex; align-items:center; gap:1rem; flex-wrap:wrap; color:var(--dim); font-size:.78rem; margin:-.15rem 0 -.05rem; }
+  .writer-line span { white-space:nowrap; }
+  .writer-line b { color:var(--ink); font-weight:700; }
+  .writer-line .jmodel, .writer-line .jbase { color:#8fd0c8; }
+  #submitBtn { grid-column:1 / -1; }
   @media (max-width:700px) {
     form { grid-template-columns:1fr 1fr }
     form input[type=url] { grid-column:1 / -1 }
-    form button { grid-column:2 }
+    form button { grid-column:1 / -1 }
     form select:nth-of-type(3) { grid-column:1 / 3 }  /* density picker spans both cols on narrow */
-    form select:nth-of-type(3) { grid-column:1 / 3 }  /* density picker spans both cols on narrow */
-    form select:nth-of-type(4) { grid-column:3 / 5 }  /* judge picker sits beside submit */
     .model-wrap { grid-column:1 / -1; margin-top:-.2rem }
-    .writer-line { grid-column:1 / -1; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; font-size:.72rem; letter-spacing:.04em; color:var(--dim); margin:-.15rem 0 .2rem }
-    .writer-pill { background:var(--chip); border:1px solid var(--border); border-radius:8px; padding:.28rem .55rem; font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; }
-    .writer-pill b { color:var(--fg); }
-    .writer-line .writer-judge b { color:var(--teal); }
+    .detail-head, .row-head { align-items:flex-start; flex-direction:column; gap:.55rem }
+    .row-actions { width:100%; justify-content:flex-start }
   }
 
 .player-overlay { position:fixed; inset:0; background:rgba(0,0,0,.95); z-index:60;
@@ -106,9 +107,9 @@
       <option value="3">Dense</option>
       <option value="4">Extra dense</option>
     </select>
-    <div class="writer-line" id="writerLine">
-      <span class="writer-pill">Writer: <b class="wmodel">—</b> · <b class="wbase">—</b></span>
-      <span class="writer-judge">Judge: <b class="jmodel">—</b> · <b class="jbase">—</b></span>
+    <div class="writer-line" id="writerLine" title="These are the models that will be used for this submission.">
+      <span>Writer: <b id="writerModelLine">—</b> · <b id="writerBaseLine">—</b></span>
+      <span>Judge: <b id="judgeModelLine">—</b> · <b id="judgeBaseLine">—</b></span>
     </div>
     <button id="submitBtn" type="submit">🎬 Riff it</button>
     <div id="modelWrap" class="model-wrap">
@@ -127,17 +128,47 @@
 <script>
 
 
+function playPositionKey(id){ return `mst3k-anything.playhead.${id}`; }
+function savePlayPosition(id,video){
+  if(!id || !video || !Number.isFinite(video.currentTime) || video.ended) return;
+  let existing=0;
+  try { existing=Number(localStorage.getItem(playPositionKey(id)) || 0); } catch(_){ }
+  // Do not replace a saved resume point with the initial 0s pause that can
+  // fire before media metadata/seek restoration finishes.
+  if(video.currentTime < .25 && existing > .5 && video.dataset.resumeTarget) return;
+  try { localStorage.setItem(playPositionKey(id), String(video.currentTime)); } catch(_){ }
+}
 function playVideo(id){
   closePlayer();
   const div=document.createElement('div');
   div.className='player-overlay'; div.id='playerOverlay';
   div.innerHTML=`<button class="player-close" onclick="closePlayer()">×</button>
     <video controls autoplay playsinline src="/api/jobs/${id}/video"></video>`;
+  const video=div.querySelector('video');
+  video.dataset.jobId=String(id);
+  let saved=0;
+  try { saved=Number(localStorage.getItem(playPositionKey(id)) || 0); } catch(_){ }
+  if(saved>0) video.dataset.resumeTarget=String(saved);
+  video.addEventListener('loadedmetadata',()=>{
+    if(saved>0 && saved < video.duration-0.5){
+      try { video.currentTime=saved; } catch(_){ }
+    } else if(saved >= video.duration-0.5){
+      try { localStorage.removeItem(playPositionKey(id)); } catch(_){ }
+      delete video.dataset.resumeTarget;
+    }
+    video.play().catch(()=>{});
+  });
+  video.addEventListener('timeupdate',()=>{
+    if(video.currentTime>.25) delete video.dataset.resumeTarget;
+    savePlayPosition(id,video);
+  });
+  video.addEventListener('pause',()=>savePlayPosition(id,video));
+  video.addEventListener('ended',()=>{ try { localStorage.removeItem(playPositionKey(id)); } catch(_){ } });
   document.body.appendChild(div);
 }
 function closePlayer(){
   const p=document.getElementById('playerOverlay');
-  if(p){p.querySelector('video')?.pause();p.remove();}
+  if(p){ const video=p.querySelector('video'); if(video) savePlayPosition(video.dataset.jobId,video); p.querySelector('video')?.pause(); p.remove(); }
 }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
 const listEl = document.getElementById('list');
@@ -149,14 +180,34 @@ const judgeModelWrap = document.getElementById('judgeModelWrap');
 const orModelEl = document.getElementById('orModel');
 const orJudgeModelEl = document.getElementById('orJudgeModel');
 const pickerNote = document.getElementById('pickerNote');
+const writerModelLine = document.getElementById('writerModelLine');
+const writerBaseLine = document.getElementById('writerBaseLine');
+const judgeModelLine = document.getElementById('judgeModelLine');
+const judgeBaseLine = document.getElementById('judgeBaseLine');
 let providers = [], jobs = [], activeId = null, trackToken = 0, orLoaded = false;
+let logScrollTimer = null, logUserScrolling = false, logProgrammatic = false;
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s == null ? '' : String(s); return d.innerHTML }
-// Return a human title; prefers the title-based slug if ingest renamed the dir.
+function hostFor(p){ return p.base || '—'; }
+function modelFor(providerId, customEl){
+  const p=providerFor(providerId);
+  if(providerId==='openrouter') return (customEl?.value || '').trim() || 'choose a model';
+  return p.model || 'provider default';
+}
+function updateModelSummary(){
+  const wp=providerFor(providerEl.value);
+  const judgeId=judgeProviderEl.value || providerEl.value;
+  const jp=providerFor(judgeId);
+  const judgeCustom=judgeProviderEl.value ? orJudgeModelEl : orModelEl;
+  writerModelLine.textContent=modelFor(providerEl.value,orModelEl);
+  writerBaseLine.textContent=hostFor(wp);
+  judgeModelLine.textContent=modelFor(judgeId,judgeCustom);
+  judgeBaseLine.textContent=hostFor(jp);
+}
+// Return a human title; prefers the title-based slug after ingest completes.
 function titleFor(j){
   const s = (j.slug || '');
   if (s && !/^https-|^youtu/.test(s)) return s.replace(/-/g,' ');
-  // fall back to somet youtu.be tail
   const src=j.source||'';
   try { const u=new URL(src); const tail=u.pathname.split('/').filter(Boolean).pop(); return tail || u.hostname }
   catch (_) { return src.split('/').filter(Boolean).pop() || 'video' }
@@ -169,6 +220,17 @@ function ago(t){
 function providerFor(id){ return providers.find(p=>p.id===id) || {}; }
 function inFlightExcept(id){ return jobs.some(j=>j.id!==id && (j.status==='queued'||j.status==='running')) }
 
+async function ensureOpenRouterModels(){
+  if(orLoaded) return;
+  const r=await fetch('/api/providers/openrouter/models');
+  if(!r.ok) throw new Error(await r.text());
+  const models=await r.json();
+  document.getElementById('orModels').innerHTML=models.map(m=>
+    `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
+  document.getElementById('orJudgeModels').innerHTML=models.map(m=>
+    `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
+  orLoaded=true;
+}
 async function loadProviders(){
   const r=await fetch('/api/providers');
   if(!r.ok) throw new Error(await r.text());
@@ -180,27 +242,30 @@ async function loadProviders(){
   updateProviderUI();
 }
 async function updateProviderUI(){
-  const p=providerFor(providerEl.value);
-  const isOr=providerEl.value==='openrouter'; modelWrap.classList.toggle('show',isOr);
-  const jisOr=judgeProviderEl.value==='openrouter'; judgeModelWrap.classList.toggle('show',jisOr);
-  pickerNote.textContent=isOr ? 'Choose a model by name, or type a provider/model id.' :
-    (p.model ? `Writer: ${p.model} · ${p.base}` : '');
-  if(isOr && !orLoaded){
-    pickerNote.textContent='Loading OpenRouter models…';
+  const isOr=providerEl.value==='openrouter';
+  const judgeId=judgeProviderEl.value || providerEl.value;
+  const jisOr=judgeId==='openrouter';
+  modelWrap.classList.toggle('show',isOr);
+  judgeModelWrap.classList.toggle('show',jisOr);
+  updateModelSummary();
+  pickerNote.textContent=(isOr || jisOr)
+    ? 'Choose an OpenRouter model when that role is set to OpenRouter.'
+    : 'Writer and Judge models use the selected provider defaults unless explicitly overridden.';
+  if(isOr || jisOr){
     try {
-      const r=await fetch('/api/providers/openrouter/models');
-      if(!r.ok) throw new Error(await r.text());
-      const models=await r.json();
-      document.getElementById('orModels').innerHTML=models.map(m=>
-        `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
-      document.getElementById('orJudgeModels').innerHTML=models.map(m=>
-        `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
-      orLoaded=true; pickerNote.textContent=`${models.length} OpenRouter models · type to filter or enter an id.`;
-    } catch(e) { pickerNote.textContent='OpenRouter model list unavailable; type a provider/model id.'; }
+      pickerNote.textContent='Loading OpenRouter models…';
+      await ensureOpenRouterModels();
+      pickerNote.textContent='Choose an OpenRouter model, or type a provider/model id.';
+    } catch(e) {
+      pickerNote.textContent='OpenRouter model list unavailable; type a provider/model id.';
+    }
   }
+  updateModelSummary();
 }
 providerEl.addEventListener('change',updateProviderUI);
 judgeProviderEl.addEventListener('change',updateProviderUI);
+orModelEl.addEventListener('input',updateModelSummary);
+orJudgeModelEl.addEventListener('input',updateModelSummary);
 
 async function loadHistory(autoTrack=true){
   const r=await fetch('/api/jobs'); if(!r.ok) return;
@@ -270,6 +335,11 @@ async function renderActive(id,d,token){
   if(token!==trackToken) return;
   let j=jobs.find(x=>x.id===id);
   if(!j){ const r=await fetch(`/api/jobs/${id}`); if(!r.ok)return; j=await r.json(); }
+  let detail=null;
+  if(d.status==='failed'){
+    const r=await fetch(`/api/jobs/${id}`); detail=r.ok?await r.json():{};
+    if(token!==trackToken)return;
+  }
   let html=`<div class="card"><div class="detail-head"><div style="min-width:0"><div class="title">${esc(titleFor(j))}</div><div class="src">${esc(j.source)}</div></div>
     <span class="status st-${esc(d.status)}">${esc(d.status)}</span></div>`;
   if(d.status==='running' && d.progress){
@@ -277,11 +347,14 @@ async function renderActive(id,d,token){
     html+=`<div class="progress-wrap"><div class="pbar"><div class="pfill" style="width:${p.pct}%"></div></div>
       <div class="ptext">${p.done}/${p.total} stages complete${p.next_stage?' · next: '+esc(p.next_stage):''}</div></div>`;
   } else if(d.stage && d.status==='running') html+=`<div class="stage">▸ ${esc(d.stage)}</div>`;
-  if(d.status==='running' || d.status==='queued'){
-    const log=(d.log||[]);
-    html+=(log.length
-      ? `<pre class="log" id="logPane">${esc(log.join('\n'))}</pre>`
-      : `<pre class="log log-waiting">Waiting for job to start…</pre>`);
+  if(d.status==='running' || d.status==='queued' || d.status==='failed' || d.status==='canceled'){
+    let lines=[...(d.log||[])];
+    const failure=d.error || (detail&&detail.error) || '';
+    const joined=lines.join('\n');
+    if(failure && (!joined || (!joined.includes(failure) && !failure.includes(joined)))) lines.push('', 'ERROR:', failure);
+    html+=lines.length
+      ? `<pre class="log" id="logPane">${esc(lines.join('\n'))}</pre>`
+      : `<pre class="log log-waiting" id="logPane">${d.status==='failed' ? 'Job failed; no log was captured.' : d.status==='canceled' ? 'Job canceled.' : 'Waiting for job to start…'}</pre>`;
   }
   if(d.status==='done'){
     let riffs=[]; try { riffs=await (await fetch(`/api/jobs/${id}/riffs`)).json(); } catch(_){ }
@@ -295,22 +368,32 @@ async function renderActive(id,d,token){
       <textarea id="riffsBox">${esc(value)}</textarea>
       <button class="btn2" id="rerenderBtn" onclick="rerender(${id})">🎬 Re-render with these riffs</button>`;
   }
-  if(d.status==='failed'){
-    const r=await fetch(`/api/jobs/${id}`); const detail=r.ok?await r.json():{};
-    if(token!==trackToken)return; html+=`<div class="err">${esc(detail.error||'unknown error')}</div>`;
-  }
   if(token!==trackToken)return;
-  // remember whether the console was bottom-pinned before we nuke the DOM
   const prev=document.getElementById('logPane');
   const wasPinned = !prev || (prev.scrollHeight - prev.scrollTop - prev.clientHeight < 24);
+  const previousTop = prev ? prev.scrollTop : 0;
   activeEl.innerHTML=html+'</div>'; updateRerenderButton();
   const box=document.getElementById('riffsBox'); if(box)box.addEventListener('input',updateRerenderButton);
-  // after innerHTML swap: restore scroll. Pin to bottom unless user scrolled up.
   const pane=document.getElementById('logPane');
   if(pane){
-    if(wasPinned){ pane.scrollTop = pane.scrollHeight; }
-    else if(prev){ pane.scrollTop = prev.scrollTop; }
-    pane.addEventListener('scroll',()=>{ /* no-op: pinning decided at render time */ });
+    const keepUserPosition = logUserScrolling && !wasPinned;
+    logProgrammatic=true;
+    pane.scrollTop = keepUserPosition ? previousTop : pane.scrollHeight;
+    requestAnimationFrame(()=>{ logProgrammatic=false; });
+    pane.addEventListener('scroll',()=>{
+      if(logProgrammatic) return;
+      logUserScrolling=true;
+      clearTimeout(logScrollTimer);
+      logScrollTimer=setTimeout(()=>{
+        const latest=document.getElementById('logPane');
+        logUserScrolling=false;
+        if(latest){
+          logProgrammatic=true;
+          latest.scrollTop=latest.scrollHeight;
+          requestAnimationFrame(()=>{ logProgrammatic=false; });
+        }
+      },700);
+    },{passive:true});
   }
 }
 function updateRerenderButton(){
