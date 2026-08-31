@@ -441,6 +441,13 @@ def delete_job(jid: int):
     # remove all artifact directories that match this slug family
     for d in _slug_dirs(slug):
         shutil.rmtree(d, ignore_errors=True)
+    # never remove the shared family dir itself — sibling jobs in the same
+    # slug family may still be running and need it.
+    family = _slug_dirs(slug)
+    if family:
+        shared = family[0] if len(family) else None
+        if shared and shared.exists():
+            return  # keep the shared family dir alive
     # also remove rename markers that reference this slug (in either direction)
     for marker_name in (f"{slug}.renamed-from", f"{slug}.renamed-to"):
         p = ROOT / "jobs" / marker_name
@@ -460,7 +467,19 @@ def get_riffs(jid: int):
     con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
     if not row:
         raise HTTPException(404, "no such job")
-    riffs = ROOT / "jobs" / row["slug"] / "riffs.json"
+    if not row:
+        raise HTTPException(404, "no such job")
+    riffs = None
+    # prefer the job's own dir; fall back to the shared family dir
+    own = ROOT / "jobs" / row["slug"] / "riffs.json"
+    if own.exists():
+        riffs = own
+    else:
+        for d in _slug_dirs(row["slug"]):
+            p = d / "riffs.json"
+            if p.exists():
+                riffs = p
+                break
     if not riffs.exists():
         raise HTTPException(404, "riffs not written yet")
     return PlainTextResponse(riffs.read_text(), media_type="application/json")
