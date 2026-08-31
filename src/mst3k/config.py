@@ -34,8 +34,25 @@ DEFAULTS = {
     "max_tempo_stretch": 2.0,
     "max_riffs": 400,
     # riff-window detection
-    "target_riff_count": 6,          # final output cap
-    "window_pool_size": 16,           # candidates offered to the writer (~target * 2)
+    # Density is computed per video as
+    #   target = clamp(pool_available, duration/riff_pace_lo, duration/riff_pace_hi)
+    # where riff_pace_* is seconds-of-video between riffs (lower = denser).
+    # Defaults: movie ~60s, vlog ~25s, everything else ~35s. Cap at max_riffs.
+    "riff_pace_per_kind": {
+        "movie":      {"lo": 40.0,  "hi": 90.0},
+        "tv":         {"lo": 35.0,  "hi": 80.0},
+        "vlog":       {"lo": 22.0,  "hi": 50.0},
+        "tutorial":   {"lo": 30.0,  "hi": 70.0},
+        "gaming":     {"lo": 12.0,  "hi": 30.0},
+        "music":      {"lo": 20.0,  "hi": 40.0},
+        "home":       {"lo": 30.0,  "hi": 70.0},
+        "commercial": {"lo": 20.0,  "hi": 45.0},
+        "other":      {"lo": 25.0,  "hi": 60.0},
+    },
+    # (target_riff_count used to be picked here; modern flow derives it from
+    # riff_pace_per_kind at runtime, so no fixed cap is needed. Set
+    # TARGET_RIFF_COUNT in .env only to intentionally cap below the calc.)
+    "window_pool_factor": 1.6,       # pool = ceil(target * factor) — overgen for judge prune
     "silence_ratio_ok": 0.04,
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
@@ -45,7 +62,7 @@ DEFAULTS = {
     "speech_dur": 0.2,                # even 200ms at this level = audible
     "min_riff_space_sec": 10.0,
     "moment_relax_db": 3.0,          # moments must be *quieter* than median, not just not-loud
-    "max_speech_frac": 0.30,          # reject moment windows >30% spoken         # riff at most (median + this) dB
+    "max_speech_frac": 0.6,           # moment threshold; riff ducking handles the bleed          # reject moment windows >30% spoken         # riff at most (median + this) dB
     # media
     "frame_width": 640,
     "crf": 22,
@@ -73,6 +90,8 @@ def load() -> dict:
     if env.get("LLM_API_KEY"): cfg["llm_key"] = env["LLM_API_KEY"]
     if env.get("LLM_MODEL"): cfg["llm_model"] = env["LLM_MODEL"]
     if env.get("LLM_UNDERSTAND_MODEL"): cfg["llm_understand_model"] = env["LLM_UNDERSTAND_MODEL"]
+    if env.get("TARGET_RIFF_COUNT"):
+        cfg["target_riff_count"] = int(env["TARGET_RIFF_COUNT"])
     if env.get("VOICE_REF"): cfg["voice_ref"] = env["VOICE_REF"]
     if env.get("VOICE_PITCH"):
         try: cfg["voice_pitch"] = float(env["VOICE_PITCH"])
