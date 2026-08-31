@@ -7,3 +7,7 @@ jobs/
 models/
 tts-venv/
 demo/
+app.db
+app.db-journal
+app.db-wal
+app.db-shm

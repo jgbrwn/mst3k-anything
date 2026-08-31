@@ -2,7 +2,9 @@
 import base64
 import json
 import os
+import time
 import urllib.request
+import urllib.error
 
 
 def load_env() -> dict:
@@ -35,16 +37,39 @@ class LLM:
             data=json.dumps(body).encode(),
             headers={"Authorization": f"Bearer {self.api_key}",
                      "Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                data = json.load(resp)
-        except urllib.error.HTTPError as exc:
-            body_repr = exc.read().decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(
-                f"LLM {exc.code} at {exc.geturl()}\n"
-                f"requested model={self.model!r}\n"
-                f"response body: {body_repr}"
-            ) from exc
+        # transient provider errors (502/503/429/timeout) retry with backoff.
+        # 4xx like 400/404 are client errors — fail immediately with detail.
+        last_err = None
+        for attempt in range(4):
+            if attempt:
+                time.sleep(2.5 * attempt)  # 2.5s, 5s, 7.5s
+            try:
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    data = json.load(resp)
+                last_err = None
+                break
+            except urllib.error.HTTPError as exc:
+                body_repr = exc.read().decode("utf-8", errors="replace")[:500]
+                if exc.code in (429, 502, 503, 504) and attempt < 3:
+                    print(f"    [llm] {exc.code} from {self.model}; retry {attempt+1}/3 in {2*attempt+2}s", flush=True)
+                    last_err = RuntimeError(
+                        f"LLM {exc.code} at {exc.geturl()}\n"
+                        f"requested model={self.model!r}\n"
+                        f"response body: {body_repr}")
+                    continue
+                raise RuntimeError(
+                    f"LLM {exc.code} at {exc.geturl()}\n"
+                    f"requested model={self.model!r}\n"
+                    f"response body: {body_repr}"
+                ) from exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                if attempt < 3:
+                    print(f"    [llm] network error ({exc!r}); retry {attempt+1}/3", flush=True)
+                    last_err = exc
+                    continue
+                raise RuntimeError(f"LLM unreachable at {self.api_base}: {exc}") from exc
+        if last_err:
+            raise last_err
         return data["choices"][0]["message"]["content"]
 
     def chat_json(self, messages: list[dict], temperature: float = 0.9,

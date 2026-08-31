@@ -207,7 +207,7 @@ async function loadHistory(autoTrack=true){
     const terminal=j.status==='done'||j.status==='failed';
     return `<div class="row"><div class="row-head"><div style="min-width:0;flex:1">
       <div class="title" title="${esc(j.source)}">${esc(titleFor(j))}</div>
-      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}${j.judge_provider?' · judge on '+esc(j.judge_provider):''}</div>
+      <div class="src">${esc(j.source)}</div><div class="meta">${ago(j.created)}${j.provider?' · '+esc(j.provider):''}${j.judge_provider?' · judge on '+esc(j.judge_provider)+' ('+esc(j.judge_model||'')+')':''}</div>
     </div><div class="row-actions"><span class="status st-${esc(j.status)}">${esc(j.status)}</span>
       <button class="btn2" onclick="track(${j.id})">View</button>
       <button class="btn2" onclick="hideJob(${j.id})">Hide</button>
@@ -272,7 +272,7 @@ async function renderActive(id,d,token){
   if(d.status==='running' || d.status==='queued'){
     const log=(d.log||[]);
     html+=(log.length
-      ? `<pre class="log">${esc(log.join('\n'))}</pre>`
+      ? `<pre class="log" id="logPane">${esc(log.join('\n'))}</pre>`
       : `<pre class="log log-waiting">Waiting for job to start…</pre>`);
   }
   if(d.status==='done'){
@@ -291,8 +291,19 @@ async function renderActive(id,d,token){
     const r=await fetch(`/api/jobs/${id}`); const detail=r.ok?await r.json():{};
     if(token!==trackToken)return; html+=`<div class="err">${esc(detail.error||'unknown error')}</div>`;
   }
-  if(token!==trackToken)return; activeEl.innerHTML=html+'</div>'; updateRerenderButton();
+  if(token!==trackToken)return;
+  // remember whether the console was bottom-pinned before we nuke the DOM
+  const prev=document.getElementById('logPane');
+  const wasPinned = !prev || (prev.scrollHeight - prev.scrollTop - prev.clientHeight < 24);
+  activeEl.innerHTML=html+'</div>'; updateRerenderButton();
   const box=document.getElementById('riffsBox'); if(box)box.addEventListener('input',updateRerenderButton);
+  // after innerHTML swap: restore scroll. Pin to bottom unless user scrolled up.
+  const pane=document.getElementById('logPane');
+  if(pane){
+    if(wasPinned){ pane.scrollTop = pane.scrollHeight; }
+    else if(prev){ pane.scrollTop = prev.scrollTop; }
+    pane.addEventListener('scroll',()=>{ /* no-op: pinning decided at render time */ });
+  }
 }
 function updateRerenderButton(){
   const b=document.getElementById('rerenderBtn'), box=document.getElementById('riffsBox'); if(!b||!box)return;

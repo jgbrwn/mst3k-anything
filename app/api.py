@@ -231,6 +231,16 @@ async def create_job(req: Request):
     if jprov == "openrouter" and jmodel and "/" not in jmodel:
         raise HTTPException(400, "OpenRouter judge_model must be provider/model")
 
+    # resolve display models now so the UI shows exactly what will run.
+    # A blank model means "provider default" — store the resolved default so
+    # the job list shows real model names, not null.
+    from mst3k import providers as _providers
+    _table = _prov = _providers.load_providers()
+    if not model:
+        model = (_table.get(provider) or {}).get("default_model") or None
+    if jprov and not jmodel:
+        jmodel = (_table.get(jprov) or {}).get("default_model")
+
     # optional density bias: 0=extra-low,1=low,2=default,3=high,4=extra-high
     bias = body.get("riff_density_bias")
     try:
