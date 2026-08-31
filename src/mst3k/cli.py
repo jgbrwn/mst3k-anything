@@ -45,7 +45,7 @@ def cmd_render(args) -> None:
     if title_slug != slug:
         new_dir = job["jobs_dir"] / title_slug
         if new_dir.exists():
-            import shutil; shutil.rmtree(new_dir)
+            shutil.rmtree(new_dir)
         job_dir.rename(new_dir)
         slug, job_dir = title_slug, new_dir
         job["dir"] = job_dir
