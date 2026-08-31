@@ -102,7 +102,7 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         out.append({"id":0, "start":round(start,1), "end":round(end,1),
                     "dur":round(end-start,1), "usable":round(usable,1),
                     "kind":"moment", "at":"mid", "quiet_db":rms,
-                    "budget_words":max(2,int(usable*job["words_per_second"]))})
+                    "budget_words":max(3,int(usable * job["words_per_second"] + 0.5))})
     out.sort(key=lambda x: x["quiet_db"])
     # take the quietest quartile — runtime-scaled so we don't drown in candidates
     keep_n = max(4, len(out) // 4)
@@ -123,7 +123,7 @@ def _mk_gap(job, start, end):
     return {"id": 0, "start": round(start,3), "end": round(end,3),
             "dur": round(dur,3), "usable": round(usable,3), "kind":"silence",
             "at":"gap_start",
-            "budget_words": max(2,int(usable * job["words_per_second"]))}
+            "budget_words": max(3,int(usable * job["words_per_second"] + 0.5))}
 
 
 def _spread(anchors, target, gap_sec, duration):

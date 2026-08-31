@@ -15,7 +15,11 @@ STYLE RULES
 2. Riff about THE SETUP: what was just said (transcript before), what's on screen
    now (frame:mid), and/or what happens right after (transcript after / frame:post).
    A riff that ignores the 5 seconds before it lands isn't riffing, it's narration.
-   Callbacks to your own previous riffs are gold when the context repeats.
+3. Across multiple gaps: vary the jokes. Don't reuse a phrase or riff type in
+   consecutive riffs — that makes it sound pre-recorded. If a callback works
+   (the previous riff referenced something that reappears), use it. Plan the
+   riff set so each gap hits a DIFFERENT audio register: snark, observation,
+   rhetorical question, mock-narrator, audience aside.
 3. Vary the joke types: observations, callbacks, literal readings, fake narration,
    addressing a character directly, audience asides.
 4. Conversational and fast — like a friend riffing next to you, not standup.
@@ -157,6 +161,20 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
     if critique_context:
         user.append({"type": "text", "text":
             "DIRECTOR'S NOTE — REWRITE REQUEST\n" + critique_context + "\nReturn JSON array."})
+    else:
+        # initial pass — thread narrative intent: announce ALL gaps so the writer
+        # can plan callbacks in a single coherent pass
+        gaps_summary = "\n".join(
+            f"GAP {g['id']} at {g['start']:.1f}s (usable {g['usable']:.1f}s, "
+            f"budget {g['budget_words']} words)"
+            for g in gaps
+        )
+        user.append({"type": "text", "text": (
+            f"You will write N riffs for the following {len(gaps)} gaps.\n"
+            f"{gaps_summary}\n\n"
+            "Plan the riff SET first: which is the thesis, which callbacks it, which varies it.\n"
+            "Then write all of them so they feel like one continuous riffing voice, not random one-offs."
+        )})
 
         # Full-transcript preamble so the writer can plan callbacks — kept
         # separate from per-gap bundles so placement context stays tight.

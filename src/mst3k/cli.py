@@ -55,12 +55,17 @@ def cmd_render(args) -> None:
             job["source"] = job_dir / sp.name
             src = job["source"]
         # leave markers so the API's delete glob can find either dir
-        (job["jobs_dir"] / f"{slug}.renamed-from").write_text(str(job_dir.name))
-        (job["jobs_dir"] / f"{job_dir.name}.renamed-from").write_text(ingest.slugify(args.source))
-        # also leave renamed-to markers so the api's candidate scan can find
-        # the new dir starting only from the original row["slug"]
-        (job["jobs_dir"] / f"{ingest.slugify(args.source)}.renamed-to").write_text(str(job_dir.name))
-        (job["jobs_dir"] / f"{slug}.renamed-to").write_text(str(job_dir.name))
+        #   .renamed-from: original slug -> final title slug   (back pointer)
+        #   .renamed-to:   original slug -> final title slug   (forward pointer -- allows api to find artifacts)
+        url_slug = ingest.slugify(args.source)
+        (job["jobs_dir"] / f"{url_slug}.renamed-from").write_text(str(job_dir.name))
+        (job["jobs_dir"] / f"{url_slug}.renamed-to").write_text(str(job_dir.name))
+        # self-marker removal: prevent drivin-.renamed-to -> drivin cycle
+        for sm in (f"{slug}.renamed-from", f"{slug}.renamed-to",
+                  f"{job_dir.name}.renamed-from", f"{job_dir.name}.renamed-to"):
+            p = job["jobs_dir"] / sm
+            if p.exists() and sm.startswith(f"{job_dir.name}."):
+                p.unlink()
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 
