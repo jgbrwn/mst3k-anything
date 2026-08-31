@@ -23,7 +23,8 @@ def find_gaps(job: dict) -> list[dict]:
     audio = extract_audio(job)
     duration = job["meta"]["duration"]
 
-    silence = _detect_silence(audio, job["min_gap"])
+    silence = _detect_silence(audio, job["min_gap"],
+                              gate_db=job.get("silence_gate_db", "-32dB"))
     sil_gaps = [g for g in (_mk_gap(job, s, e) for s, e in silence) if g]
 
     pool = job.get("window_pool_size", job["target_riff_count"] * 2)
@@ -52,9 +53,9 @@ def _mk_gap(job, start, end):
             "budget_words": max(2, int(usable * job["words_per_second"]))}
 
 
-def _detect_silence(audio: Path, min_gap: float, gate_db: str = "-37dB") -> list[tuple]:
+def _detect_silence(audio: Path, min_gap: float, gate_db: str = "-32dB") -> list[tuple]:
     proc = subprocess.run(["ffmpeg", "-i", str(audio), "-af",
-                           f"silencedetect=noise={gate_db}:d=0.8", "-f", "null", "-"],
+                           f"silencedetect=noise={gate_db}:d=0.7", "-f", "null", "-"],
                           capture_output=True, text=True)
     starts, ends = [], []
     for line in proc.stderr.splitlines():

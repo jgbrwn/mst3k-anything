@@ -40,6 +40,7 @@ DEFAULTS = {
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
     "moment_hop_sec": 1.2,
+    "silence_gate_db": "-32dB",       # primary riff-window detection
     "speech_noise_db": "-42dB",       # audible-speech gate for moment rejection
     "speech_dur": 0.2,                # even 200ms at this level = audible
     "min_riff_space_sec": 10.0,
