@@ -35,8 +35,16 @@ class LLM:
             data=json.dumps(body).encode(),
             headers={"Authorization": f"Bearer {self.api_key}",
                      "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            data = json.load(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                data = json.load(resp)
+        except urllib.error.HTTPError as exc:
+            body_repr = exc.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(
+                f"LLM {exc.code} at {exc.geturl()}\n"
+                f"requested model={self.model!r}\n"
+                f"response body: {body_repr}"
+            ) from exc
         return data["choices"][0]["message"]["content"]
 
     def chat_json(self, messages: list[dict], temperature: float = 0.9,

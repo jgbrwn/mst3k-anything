@@ -120,22 +120,31 @@ async def run_job(jid: int) -> None:
             stdout=log, stderr=asyncio.subprocess.STDOUT, env=env)
         rc = await p.wait()
     # slug may have been changed to a title-based form after ingest;
-    # either dir might hold artifacts. Walk both, keeping the original
-    # dir first so log text path resolution stays sane.
-    candidates = [job_dir]
-    # forward rename: the CLI leaves slugs.renamed-to with the title-based dir
+    # collect all dirs that could plausibly hold artifacts for this job.
+    candidates = []
+    def keep(p):
+        if p.is_dir() and p not in candidates:
+            candidates.append(p)
+    keep(job_dir)
+    # forward rename: cli writes <url-slug>.renamed-to = <title-slug>
     to_marker = ROOT / "jobs" / f"{row['slug']}.renamed-to"
     if to_marker.exists():
         try:
-            candidates.insert(0, ROOT / "jobs" / to_marker.read_text().strip())
+            keep(ROOT / "jobs" / to_marker.read_text().strip())
         except Exception:
             pass
-    # defensive sweep: any sibling dir starting with "https-" that contains a
-    # source.mp4 is a candidate too
+    # also backward: a title-slug.renamed-from pointed at our url-slug
+    for p in ROOT.glob("jobs/*.renamed-from"):
+        try:
+            if p.read_text().strip() == row["slug"]:
+                keep(ROOT / "jobs" / p.name.replace(".renamed-from", ""))
+        except Exception:
+            pass
+    # defensive sweep: any sibling https-* dir containing source.mp4
     for p in ROOT.glob("jobs/*"):
-        if p.is_dir() and p.name != job_dir.name and p.name.startswith("https-"):
-            if (p / "source.mp4").exists() and p not in candidates:
-                candidates.append(p)
+        if p.is_dir() and p.name.startswith("https-"):
+            if (p / "source.mp4").exists():
+                keep(p)
     video = next((v for c in candidates for v in c.glob("*_riffed.mp4") if v.exists()), None)
     srt   = next((s for c in candidates for s in c.glob("*_riffs.srt") if s.exists()), None)
     if rc == 0 and video and video.exists():
@@ -149,8 +158,18 @@ async def run_job(jid: int) -> None:
             con = db(); con.execute("UPDATE jobs SET slug=? WHERE id=?", (final_dir.name, jid))
             con.commit(); con.close()
     else:
-        err = logpath.read_text()[-4000:] if logpath.exists() else "no log captured"
-        _set(jid, status="failed", error=err)
+        # On failure, find run.log in any of the candidate dirs (the cli
+        # renames url-slug -> title-slug, taking run.log with it).
+        err = None
+        for c in candidates:
+            p = c / "run.log"
+            if p.exists():
+                try:
+                    err = p.read_text()[-4000:]
+                    break
+                except Exception:
+                    continue
+        _set(jid, status="failed", error=err or "no log captured")
 
 
 @app.get("/api/providers")

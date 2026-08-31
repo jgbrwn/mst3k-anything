@@ -10,11 +10,13 @@ DEFAULTS = {
     # paths
     "jobs_dir": BASE / "jobs",
     "pocket_tts": BASE / "tts-venv/bin/pocket-tts",
-    # LLM (swappable via .env)
-    "llm_base": "https://hyper.charm.land/v1",
+    # LLM (swappable via .env). Model fields are EMPTY by default so per-provider
+    # defaults kick in when the user picks a non-Hyper provider; setting
+    # HYPER/NEURALWATT/OPENROUTER_WRITER_MODEL in .env overrides.
+    "llm_base": "https://api.neuralwatt.com/v1",
     "llm_key": "",
-    "llm_model": "qwen3.8-flash",
-    "llm_understand_model": "qwen3.8-flash",
+    "llm_model": "",
+    "llm_understand_model": "",
     # voice lineup (ensemble configuration)
     "voice_ref": None,          # solo: optional public-domain wav to clone
     "voice_rate": 1.0,

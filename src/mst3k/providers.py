@@ -113,7 +113,7 @@ def resolve(job: dict, role: str = "write") -> dict:
             job.get("provider") or "hyper")
     override_mod = (os.environ.get(f"MST3K_{role.upper()}_MODEL") or
                     os.environ.get("MST3K_MODEL") or
-                    job.get(f"{role}_model") or job.get("llm_model") or
+                    job.get(f"{role}_model") or
                     job.get("model"))
     table = load_providers()
     row = table.get(prov)
