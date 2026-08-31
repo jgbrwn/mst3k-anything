@@ -71,9 +71,13 @@
     form input[type=url] { grid-column:1 / -1 }
     form button { grid-column:2 }
     form select:nth-of-type(3) { grid-column:1 / 3 }  /* density picker spans both cols on narrow */
+    form select:nth-of-type(3) { grid-column:1 / 3 }  /* density picker spans both cols on narrow */
+    form select:nth-of-type(4) { grid-column:3 / 5 }  /* judge picker sits beside submit */
     .model-wrap { grid-column:1 / -1; margin-top:-.2rem }
-    .detail-head, .row-head { align-items:flex-start; flex-direction:column; gap:.55rem }
-    .row-actions { width:100%; justify-content:flex-start }
+    .writer-line { grid-column:1 / -1; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; font-size:.72rem; letter-spacing:.04em; color:var(--dim); margin:-.15rem 0 .2rem }
+    .writer-pill { background:var(--chip); border:1px solid var(--border); border-radius:8px; padding:.28rem .55rem; font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; }
+    .writer-pill b { color:var(--fg); }
+    .writer-line .writer-judge b { color:var(--teal); }
   }
 
 .player-overlay { position:fixed; inset:0; background:rgba(0,0,0,.95); z-index:60;
@@ -102,6 +106,10 @@
       <option value="3">Dense</option>
       <option value="4">Extra dense</option>
     </select>
+    <div class="writer-line" id="writerLine">
+      <span class="writer-pill">Writer: <b class="wmodel">—</b> · <b class="wbase">—</b></span>
+      <span class="writer-judge">Judge: <b class="jmodel">—</b> · <b class="jbase">—</b></span>
+    </div>
     <button id="submitBtn" type="submit">🎬 Riff it</button>
     <div id="modelWrap" class="model-wrap">
       <input id="orModel" list="orModels" placeholder="OpenRouter model (provider/model)" aria-label="OpenRouter model">
