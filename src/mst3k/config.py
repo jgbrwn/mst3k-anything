@@ -41,13 +41,13 @@ DEFAULTS = {
     "riff_pace_per_kind": {
         "movie":      {"lo": 40.0,  "hi": 90.0},
         "tv":         {"lo": 35.0,  "hi": 80.0},
-        "vlog":       {"lo": 22.0,  "hi": 50.0},
+        "vlog":       {"lo": 35.0,  "hi": 75.0},
         "tutorial":   {"lo": 30.0,  "hi": 70.0},
-        "gaming":     {"lo": 12.0,  "hi": 30.0},
+        "gaming":     {"lo": 15.0,  "hi": 35.0},
         "music":      {"lo": 20.0,  "hi": 40.0},
         "home":       {"lo": 30.0,  "hi": 70.0},
         "commercial": {"lo": 20.0,  "hi": 45.0},
-        "other":      {"lo": 25.0,  "hi": 60.0},
+        "other":      {"lo": 30.0,  "hi": 70.0},
     },
     # (target_riff_count used to be picked here; modern flow derives it from
     # riff_pace_per_kind at runtime, so no fixed cap is needed. Set
@@ -57,7 +57,8 @@ DEFAULTS = {
     "min_silence_frac": 0.5,
     "moment_win_sec": 1.6,
     "moment_hop_sec": 1.2,
-    "silence_gate_db": "-32dB",       # primary riff-window detection
+    "silence_gate_db": "-25dB",       # primary riff-window detection
+    "silence_min_dur": 0.5,           # silencedetect d= arg (s)
     "speech_noise_db": "-42dB",       # audible-speech gate for moment rejection
     "speech_dur": 0.2,                # even 200ms at this level = audible
     "min_riff_space_sec": 10.0,

@@ -401,6 +401,18 @@ def delete_job(jid: int):
     # remove all artifact directories that match this slug family
     for d in _slug_dirs(slug):
         shutil.rmtree(d, ignore_errors=True)
+    # also remove rename markers that reference this slug (in either direction)
+    for marker_name in (f"{slug}.renamed-from", f"{slug}.renamed-to"):
+        p = ROOT / "jobs" / marker_name
+        if p.exists():
+            p.unlink()
+    # walk all other .renamed-from/-to files and find ones that point AT this slug
+    for marker in (ROOT / "jobs").glob("*.renamed-*"):
+        try:
+            if marker.read_text().strip() == slug:
+                marker.unlink()
+        except Exception:
+            pass
     return {"id": jid, "deleted": True}
 @app.get("/api/jobs/{jid}/riffs")
 def get_riffs(jid: int):

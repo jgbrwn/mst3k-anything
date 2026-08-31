@@ -64,9 +64,9 @@ def _frange(start, stop, step):
 
 
 def _detect_silence(audio: Path, min_gap: float,
-                    gate_db: str = "-32dB") -> list[tuple]:
+                    gate_db: str = "-32dB", min_dur: float = 0.7) -> list[tuple]:
     proc = subprocess.run(["ffmpeg", "-i", str(audio), "-af",
-                           f"silencedetect=noise={gate_db}:d=0.7",
+                           f"silencedetect=noise={gate_db}:d={min_dur}",
                            "-f", "null", "-"], capture_output=True, text=True)
     starts, ends = [], []
     for line in proc.stderr.splitlines():
@@ -83,8 +83,10 @@ def _detect_silence(audio: Path, min_gap: float,
 
 
 def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
-    """Scan audio for "relatively calm" sections, rejecting any window where
-    more than max_speech_frac of it is spoken."""
+    """Rank windows by RMS quietness. We no longer reject by speech-frac
+    outright: on tightly narrated videos every moment is 100% speech, so
+    gating on that discards everything. Sidechain ducking handles the
+    undertalk on playback — instead pick the quietest viable windows."""
     duration = job["meta"]["duration"]
     win, hop = job["moment_win_sec"], job["moment_hop_sec"]
     lead = job.get("lead_in_sec", 0.5)
@@ -93,8 +95,6 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
         end = min(start + win, duration)
         aseg = _seg(job, audio, start, end)
         if aseg is None: continue
-        frac = _speech_frac(aseg, job["speech_noise_db"], job["speech_dur"], win)
-        if frac > job.get("max_speech_frac", 0.6): continue
         rms = _rms_db(aseg)
         if rms is None: continue
         usable = min(end - start - 0.4, job["max_riff_seconds"])
@@ -104,7 +104,9 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
                     "kind":"moment", "at":"mid", "quiet_db":rms,
                     "budget_words":max(2,int(usable*job["words_per_second"]))})
     out.sort(key=lambda x: x["quiet_db"])
-    return out
+    # take the quietest quartile — runtime-scaled so we don't drown in candidates
+    keep_n = max(4, len(out) // 4)
+    return out[:keep_n]
 
 
 def _rms_db(seg: Path) -> float | None:
@@ -140,40 +142,23 @@ def _spread(anchors, target, gap_sec, duration):
 
 
 def _fill_with_moments(audio, job, gaps, target, gap_sec, duration):
-    """Top up picks with moments ranked by quietness."""
+    """Top up picks with moments ranked by RMS quietness. The frac gate is
+    dropped — refer to _detect_quiet_moments docstring; on narrated videos
+    every moment exceeds it."""
     if len(gaps) >= target:
         return gaps
-    win, hop = job["moment_win_sec"], job["moment_hop_sec"]
-    lead = job.get("lead_in_sec", 0.5)
+    final = _detect_quiet_moments(audio, job)
+    picked_set = {(g["start"], g["end"]) for g in gaps}
     out = list(gaps)
-    used = {(g["start"], g["end"]) for g in out}
-    # positions where we want more
-    candidates = []
-    while len(out) < target:
-        # pick (not necessarily under gap_sec) any point along timeline
-        for start in _frange(lead, max(lead, duration - win), hop):
-            end = min(start + win, duration)
-            if _overlaps(out, start, end, gap_sec / 3):
-                continue
-            seg_fp = _seg(job, audio, start, end)
-            if seg_fp is None:
-                continue
-            frac = _speech_frac(seg_fp, job["speech_noise_db"], job["speech_dur"], win)
-            rms = _rms_db(seg_fp)
-            if frac > job.get("max_speech_frac", 0.6):
-                continue
-            usable = max(0.4, win - 0.4)
-            candidate = {"start": start, "end": end, "kind": "moment",
-                         "at": "mid", "usable": usable, "dur": win,
-                         "budget_words": max(2, int(usable * job["words_per_second"])),
-                         "quiet_db": rms or -999}
-            candidates.append(candidate)
-        if not candidates:
+    for m in final:
+        if len(out) >= target:
             break
-        best = min(candidates, key=lambda m: (m["frac"], m["quiet_db"]))
-        if best["frac"] > job.get("max_speech_frac", 0.6):
-            break
-        out.append(best); out.sort(key=lambda g: g["start"])
+        if (m["start"], m["end"]) in picked_set:
+            continue
+        if any(not (m["end"] <= p["start"] or m["start"] >= p["end"]) for p in out):
+            continue
+        out.append(m)
+        out.sort(key=lambda g: g["start"])
     return out
 
 
@@ -185,13 +170,17 @@ def find_gaps(job: dict) -> list[dict]:
     duration = job["meta"]["duration"]
 
     sil = _detect_silence(audio, job["min_gap"],
-                          gate_db=job.get("silence_gate_db","-32dB"))
+                          gate_db=job.get("silence_gate_db","-25dB"),
+                          min_dur=job.get("silence_min_dur",0.5))
     sil_gaps = [g for g in (_mk_gap(job,s,e) for s,e in sil) if g]
 
     pace = (job.get("riff_pace_per_kind") or {}).get(
-        job.get("kind","other"), {"lo":25.0,"hi":60.0})
-    ideal  = max(1, duration / pace["lo"])
-    ceiling= max(2, duration / pace["hi"])
+        job.get("kind","other"), {"lo":30.0,"hi":70.0})
+    # lo/hi are SECONDS between riffs. Lower = denser. The target number of
+    # riffs is duration / midpoint pace (binary-search sense: average).
+    midpoint = (pace["lo"] + pace["hi"]) / 2
+    ideal  = max(1, int(duration / midpoint))
+    ceiling= max(2, int(duration / pace["hi"]))
     target = max(1, int(min(max(len(sil_gaps), ceiling), ideal)))
     if "target_riff_count" in job:  # .env safety cap
         target = min(target, int(job["target_riff_count"]))
@@ -211,7 +200,7 @@ def find_gaps(job: dict) -> list[dict]:
     while len(gaps) < target:
         moments = _detect_quiet_moments(audio, job)
         uses = {(g["start"], g["end"]) for g in gaps}
-        best = None; best_score = float('inf')
+        best = None; best_score = (float('inf'), float('inf'))
         cur = span_max(gaps)
         for m in moments:
             if (m["start"], m["end"]) in uses:
@@ -220,8 +209,8 @@ def find_gaps(job: dict) -> list[dict]:
                 continue
             hyp = gaps + [m]; hyp.sort(key=lambda g: g["start"])
             s = span_max(hyp)
-            # we prefer smaller span; if equal, quieter is better
-            score = (s, m["frac"], m["quiet_db"])
+            # smaller span wins; ties broken by RMS quietness
+            score = (s, m["quiet_db"])
             if score < best_score:
                 best_score, best = score, m
         if not best or best_score[0] >= cur:
