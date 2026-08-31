@@ -48,7 +48,7 @@ def _b64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode()
 
 
-def _bundle_to_user(bundle: dict, prev_riff: str):
+def _bundle_to_user(bundle: dict):
     """One bundle -> list of chat-completion content parts."""
     g = bundle["gap"] = bundle["gap"]
     tag = f", score={g.get('score', 0):.2f}" if "score" in g else ""
@@ -73,8 +73,6 @@ def _bundle_to_user(bundle: dict, prev_riff: str):
     if bundle.get("hot_moment") is not None:
         parts.append({"type": "text", "text":
             f"HOT MOMENT near {bundle['hot_moment']:.1f}s — something dramatic here."})
-    if prev_riff:
-        parts.append({"type": "text", "text": f"PREV RIFF (may callback): '{prev_riff}'"})
     return parts
 
 
@@ -162,20 +160,22 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
         user.append({"type": "text", "text":
             "DIRECTOR'S NOTE — REWRITE REQUEST\n" + critique_context + "\nReturn JSON array."})
     else:
-        # initial pass — thread narrative intent: announce ALL gaps so the writer
-        # can plan callbacks in a single coherent pass
+        # initial pass — announce ALL gaps so the writer plans callbacks in
+        # one coherent pass, rather than writing isolated one-offs
         gaps_summary = "\n".join(
             f"GAP {g['id']} at {g['start']:.1f}s (usable {g['usable']:.1f}s, "
             f"budget {g['budget_words']} words)"
             for g in gaps
         )
         user.append({"type": "text", "text": (
-            f"You will write N riffs for the following {len(gaps)} gaps.\n"
+            f"You will write {len(gaps)} riffs for the following gaps.\n"
             f"{gaps_summary}\n\n"
             "Plan the riff SET first: which is the thesis, which callbacks it, which varies it.\n"
             "Then write all of them so they feel like one continuous riffing voice, not random one-offs."
         )})
 
+    # attach all multi-modal context (frames + transcript + full transcript)
+    if bundles:
         # Full-transcript preamble so the writer can plan callbacks — kept
         # separate from per-gap bundles so placement context stays tight.
         lines = []
@@ -196,11 +196,10 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
                 "in here):\n" + "\n".join(full))})
 
         bundle_by_gap = {b["gap"]["id"]: b for b in bundles}
-        prev_line = ""
         for g in gaps:
-            user.extend(_bundle_to_user(bundle_by_gap[g["id"]], prev_line))
-            prev_line = ""  # placeholder until riffs returned
+            user.extend(_bundle_to_user(bundle_by_gap[g["id"]]))
     else:
+        # legacy fallback: frames only
         for g in gaps:
             tag = f", score={g.get('score', 0):.2f}" if "score" in g else ""
             user.append({"type": "text", "text":

@@ -165,7 +165,21 @@ def _fill_with_moments(audio, job, gaps, target, gap_sec, duration):
 def find_gaps(job: dict) -> list[dict]:
     cache = job["dir"] / "gaps.json"
     if cache.exists():
-        return json.loads(cache.read_text())
+        gaps = json.loads(cache.read_text())
+        # target_riff_count is a runtime-derived int; recompute it so the
+        # caller's log message doesn't KeyError on cache hits
+        duration = job["meta"]["duration"]
+        pace = (job.get("riff_pace_per_kind") or {}).get(
+            job.get("kind","other"), {"lo":30.0,"hi":70.0})
+        midpoint = (pace["lo"] + pace["hi"]) / 2
+        ideal  = max(1, int(duration / midpoint))
+        ceiling= max(2, int(duration / pace["hi"]))
+        sil_count = sum(1 for g in gaps if g["kind"]=="silence")
+        target = max(1, int(min(max(sil_count, ceiling), ideal)))
+        if "target_riff_count" in job:
+            target = min(target, int(job["target_riff_count"]))
+        job["target_riff_count"] = target
+        return gaps
     audio = extract_audio(job)
     duration = job["meta"]["duration"]
 
