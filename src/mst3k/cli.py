@@ -57,15 +57,26 @@ def cmd_render(args) -> None:
         # leave markers so the API's delete glob can find either dir
         (job["jobs_dir"] / f"{slug}.renamed-from").write_text(str(job_dir.name))
         (job["jobs_dir"] / f"{job_dir.name}.renamed-from").write_text(ingest.slugify(args.source))
+        # also leave renamed-to markers so the api's candidate scan can find
+        # the new dir starting only from the original row["slug"]
+        (job["jobs_dir"] / f"{ingest.slugify(args.source)}.renamed-to").write_text(str(job_dir.name))
+        (job["jobs_dir"] / f"{slug}.renamed-to").write_text(str(job_dir.name))
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 
-    # 2 analyze
+    # 2 determine kind first so density picks the right pace
+    # Use understand (sees frames) *and* metadata so we don't guess from a title.
+    # Note: understand makes its own LLM call; we cache the profile in job_dir.
+    step("frames", lambda: analyze.grab_frames(job, []))
+    profile = step("understand", lambda: understand.build_profile(job))
+    job["kind"] = (profile or {}).get("kind", "other")
+
+    # 3 gaps (density depends on job["kind"])
     gaps = step("gaps", lambda: analyze.find_gaps(job))
     kinds = "+".join(sorted({g["kind"] for g in gaps}))
-    print(f"    {len(gaps)} riff windows ({kinds or 'none'})")
+    print(f"    {len(gaps)} riff windows ({kinds or 'none'}), target={job['target_riff_count']} for kind={job['kind']}")
     if not gaps:
-        print("No usable riff windows (neither silence nor a quiet moment).")
+        print("No usable riff windows.")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
     analyze.score_visual_interest(job, gaps)
@@ -74,17 +85,13 @@ def cmd_render(args) -> None:
     (job_dir / "hot_moments.json").write_text(json.dumps(hot, indent=2))
     step("context frames", lambda: context.grab_context_frames(job, gaps, hot))
 
-    # 2b transcribe + bundles
+    # 4 transcribe + bundles
     asr = step("transcribe", lambda: transcribe.transcribe(job))
     bundles = context.build_bundles(job, gaps, asr, hot)
     (job_dir / "bundles.json").write_text(json.dumps(
         [{k: v for k, v in b.items() if k != "frames"} for b in bundles], indent=1))
 
-    # 3 understand
-    profile = step("understand", lambda: understand.build_profile(job))
-    print(f"    kind={profile.get('kind')}")
-
-    # 4 write (context-driven) with head-writer desk review pass
+    # 5 write (context-driven) with head-writer desk review pass
     riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
     kept = sum(1 for r in riffs if r.get("_kept_from_rewrite"))
     note = f"{len(riffs)} riffs"

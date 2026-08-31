@@ -231,3 +231,100 @@ def find_gaps(job: dict) -> list[dict]:
     for i,g in enumerate(gaps,1): g["id"]=i
     cache.write_text(json.dumps(gaps,indent=2))
     return gaps
+
+
+def _astats(seg: Path):
+    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
+                           "astats=metadata=0", "-f", "null", "-"],
+                          capture_output=True, text=True)
+    m1, m2 = re.findall(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr), \
+             re.findall(r"Peak level dB:\s*(-?\d+\.\d+)", proc.stderr)
+    if m1 and m2:
+        return float(m1[-1]), float(m2[-1])
+    return None
+
+
+def hot_moments(job: dict, audio: Path, k: int = 5) -> list[float]:
+    """Peak-arousal timestamps (budget-capped) so the writer treats these as
+    high-value riff anchors regardless of their quiet score."""
+    duration = job["meta"]["duration"]
+    win, hop = 1.6, 1.6
+    scored = []
+    for start in _frange(0.5, max(0.5, duration - win), hop):
+        end = min(start + win, duration)
+        aseg = _seg(job, audio, start, end)
+        if aseg is None:
+            continue
+        info = _astats(aseg)
+        if not info:
+            continue
+        mean_db, peak_db = info
+        arousal = peak_db - mean_db  # big transient = something happened
+        scored.append((arousal, start))
+    scored.sort(key=lambda x: -x[0])
+    return sorted(round(s, 1) for _a, s in scored[:k])
+
+
+def find_cuts(job: dict, max_cuts: int = 400) -> list[float]:
+    """Scene-change timestamps, cached."""
+    cache = job["dir"] / "cuts.json"
+    if cache.exists():
+        return json.loads(cache.read_text())
+    proc = subprocess.run(["ffmpeg", "-i", str(job["source"]), "-vf",
+                           "select='gt(scene,0.4)',showinfo", "-f", "null", "-"],
+                          capture_output=True, text=True)
+    cuts = []
+    for line in proc.stderr.splitlines():
+        m = re.search(r"pts_time:([\d.]+)", line)
+        if m:
+            cuts.append(round(float(m.group(1)), 3))
+            if len(cuts) >= max_cuts:
+                break
+    cache.write_text(json.dumps(cuts))
+    return cuts
+
+
+def score_visual_interest(job: dict, gaps: list[dict]) -> None:
+    """Per-gap 0..1 visual-interest score (luma-variance proxy for busy-ness).
+    Lets the writer prioritize busy moments over static shots."""
+    raw = [_luma_variance(job["dir"] / "frames" / f"gap{g['id']:03d}.png")
+           for g in gaps]
+    mx = max(raw) if raw else 1.0
+    mx = mx if mx > 0 else 1.0
+    for g, v in zip(gaps, raw):
+        g["score"] = round((v or 0) / mx, 3)
+
+
+def _luma_variance(path: Path) -> float:
+    """Busier shots have higher luma variance at low res. 0 if unreadable."""
+    if not path.exists():
+        return 0.0
+    proc = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vf",
+                           "scale=64:36,format=gray,signalstats",
+                           "-f", "null", "-"],
+                          capture_output=True, text=True)
+    m = re.search(r"YAVG:([\d.]+)", proc.stderr)
+    return float(m.group(1)) if m else 0.0
+
+
+def grab_frames(job: dict, gaps: list[dict]) -> None:
+    """One keyframe at the middle of each gap + ~10 context frames for the
+    understand stage."""
+    frames = job["dir"] / "frames"
+    frames.mkdir(exist_ok=True)
+    dur = job["meta"]["duration"]
+    for g in gaps:
+        t = (g["start"] + g["end"]) / 2
+        f = frames / f"gap{g['id']:03d}.png"
+        if not f.exists():
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(t),
+                            "-i", str(job["source"]), "-frames:v", "1",
+                            "-vf", f"scale={job['frame_width']}:-1", str(f)])
+    n = 10
+    for i in range(n):
+        t = dur * (i + 0.5) / n
+        f = frames / f"ctx{i:02d}.png"
+        if not f.exists():
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(t),
+                            "-i", str(job["source"]), "-frames:v", "1",
+                            "-vf", f"scale={job['frame_width']}:-1", str(f)])

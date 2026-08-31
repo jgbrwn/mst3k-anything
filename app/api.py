@@ -119,18 +119,19 @@ async def run_job(jid: int) -> None:
     # either dir might hold artifacts. Walk both, keeping the original
     # dir first so log text path resolution stays sane.
     candidates = [job_dir]
-    marker = ROOT / "jobs" / f"{row['slug']}.renamed-from"
-    if marker.exists():
+    # forward rename: the CLI leaves slugs.renamed-to with the title-based dir
+    to_marker = ROOT / "jobs" / f"{row['slug']}.renamed-to"
+    if to_marker.exists():
         try:
-            candidates.insert(0, ROOT / "jobs" / marker.read_text().strip())
+            candidates.insert(0, ROOT / "jobs" / to_marker.read_text().strip())
         except Exception:
             pass
-    else:
-        # also scan sibling headers — defensive when the marker write raced.
-        for p in ROOT.glob("jobs/*"):
-            if p.is_dir() and p.name != job_dir.name and p.name.startswith("https-youtu-be"):
-                if (p / "source.mp4").exists():
-                    candidates.append(p)
+    # defensive sweep: any sibling dir starting with "https-" that contains a
+    # source.mp4 is a candidate too
+    for p in ROOT.glob("jobs/*"):
+        if p.is_dir() and p.name != job_dir.name and p.name.startswith("https-"):
+            if (p / "source.mp4").exists() and p not in candidates:
+                candidates.append(p)
     video = next((v for c in candidates for v in c.glob("*_riffed.mp4") if v.exists()), None)
     srt   = next((s for c in candidates for s in c.glob("*_riffs.srt") if s.exists()), None)
     if rc == 0 and video and video.exists():
@@ -140,7 +141,9 @@ async def run_job(jid: int) -> None:
              riffs=str(final_dir / "riffs.json"))
         # update slug to the title one so list/detail follow the same naming
         if final_dir.name != row["slug"]:
-            _set(jid, slug=final_dir.name)
+            # reflect the title slug in the DB so list_title/detail URLs stabilize
+            con = db(); con.execute("UPDATE jobs SET slug=? WHERE id=?", (final_dir.name, jid))
+            con.commit(); con.close()
     else:
         err = logpath.read_text()[-4000:] if logpath.exists() else "no log captured"
         _set(jid, status="failed", error=err)
@@ -277,11 +280,20 @@ async def events(jid: int):
             con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
             if not row:
                 yield f"data: {json.dumps({'error': 'gone'})}\n\n"; return
-            log = ROOT / "jobs" / row["slug"] / "run.log"
-            lines = log.read_text().splitlines() if log.exists() else []
+            base = ROOT / "jobs" / row["slug"]
+            if not base.exists():
+                # CLI may have renamed to title-slug already; follow the marker
+                marker = (ROOT / "jobs" / f"{row['slug']}.renamed-from")
+                if marker.exists():
+                    try:
+                        base = ROOT / "jobs" / marker.read_text().strip()
+                    except Exception:
+                        pass
+            logfile = base / "run.log"
+            lines = logfile.read_text().splitlines() if logfile.exists() else []
             stage = next((l[1:l.index("]")] for l in reversed(lines)
                           if l.startswith("[") and "]" in l), None)
-            tail = lines[-80:]
+            tail = lines[-120:]  # roomier tail; UI trims
             progress = _progress(lines)
             yield f"data: {json.dumps({'status': row['status'], 'stage': stage, 'log': tail, 'progress': progress})}\n\n"
             if row["status"] in ("done", "failed"):
