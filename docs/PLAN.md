@@ -15,10 +15,10 @@ on a 2-core CPU box (see `demo/`):
 | Stage | Proven with | Result |
 |---|---|---|
 | YouTube ingest | yt-dlp 2026.08.19 (`uv tool install`) | 3 min of Plan 9 from Outer Space, 360p mp4 |
-| Riff-window detection | ffmpeg silencedetect | 3 candidate gaps found automatically |
+| Riff cue detection | ffmpeg + deterministic audio/cut scoring | dense cadence baseline plus silence/visual/audio signals |
 | Visual understanding + joke writing | qwen3.8-flash (vision) via Hyper chat-completions API | 3 frame-specific riffs, correct JSON, $0.002 |
 | TTS (free, CPU, no GPU) | Pocket TTS (Kyutai) | 3.3s of speech in ~6s on 2 cores; voice cloning available |
-| Timing guard ("the unforgivable sin") | measured-duration fit check | overrunning riffs dropped, survivors placed to the millisecond |
+| Timing and mix | measured TTS duration + sidechain ducking | preferred landing windows; deliberate dialogue overlap is allowed |
 | Voice differentiation | Pocket TTS + ffmpeg pitch shift | 3 distinct characters from pitch-coloring (movie-sign recipe) |
 | Audio duck & mix | ffmpeg `volume=between()` + `adelay` + gain | silence window went −45 dB → −18 dB exactly during the riff |
 | Theater overlay | stdlib-generated RGBA silhouette PNG | bottom-band brightness 76 → 35, composited for full duration |
@@ -39,13 +39,12 @@ agentic LLM stages (understand, write)**. That split drives the whole architectu
 │ FastAPI + job queue (SQLite-backed) · resumable stage cache            │
 ├────────────────────────────── PIPELINE ────────────────────────────────┤
 │ 1 INGEST      yt-dlp download (+subs if any) → mp4                     │
-│ 2 DECOMPOSE   audio extract · silencedetect gaps · scene detect ·      │
-│               keyframes per gap · transcript (subs else whisper)       │
-│ 3 UNDERSTAND  *LLM AGENT*: plot/characters/tone/campsites-for-jokes    │
-│ 4 WRITE       *LLM AGENT*: draft → judge/rewrite → approved riff set       │
-│ 5 FIT         TTS each line → measure → stretch/drop against budget       │
-│ 6 MIX         duck original during riffs · riffs +gain · overlay PNG     │
-│ 7 DELIVER     final mp4 · final riffs.srt · rendered riffs.json           │
+│ 2 TRANSCRIBE  chunked Parakeet ASR → timestamped transcript            │
+│ 3 UNDERSTAND  *LLM AGENT*: metadata + frames + transcript → ledger     │
+│ 4 CUE PLAN    cadence + audio + cuts + pauses → dense scored cues      │
+│ 5 WRITE       *LLM AGENT*: contextual draft → judge/rewrite             │
+│ 6 PLACE       TTS measurement → preferred landing or deliberate overlap │
+│ 7 MIX/DELIVER duck + mix → final mp4, SRT, rendered riffs.json         │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -65,53 +64,41 @@ This is what makes the comedy land in the right places without hallucinated timi
 - Metadata: title, duration, uploader → feeds the "understand" stage.
 
 ### Stage 2 — Decompose (all deterministic, cached)
-- **Silence gaps**: `ffmpeg silencedetect` (noise floor −35 dB, min gap ~1.2–2 s).
-  Each gap → `{start, dur, word_budget = (dur − 2*margin) * 2.6 words/s}`.
-- **Transcript**: prefer downloaded subs; else Parakeet CTC (INT8, CPU-only) in bounded
-  60-second subprocess chunks. Each chunk is cached independently so long recordings
-  cannot grow one offline decoder until the host runs out of memory.
-- **Frames**: one frame per gap (mid-gap) + a few context frames; downscaled to ~512px
-  for vision calls. Optional: PySceneDetect to prefer shot-stable frames.
-- **Hot moments** (v2): audio-energy spikes (crashes, stings, crowd laughs) and
-  scene-change density mark the funniest targets; rank gaps by "comedy potential".
+- **Transcript**: Parakeet CTC (INT8, CPU-only) runs in bounded 60-second subprocess
+  chunks, cached independently for long-form reliability.
+- **Frames**: one anchor frame plus pre/mid/post context frames; downscaled for vision.
 
 ### Stage 3 — Understand (LLM agent)
-- One vision call (or a few chunked calls for long videos): frames sampled across the
-  video + transcript → `{summary, characters, tone, running_gags, worst_moments,
-  genre_cliches}`. This becomes shared context for the writers' room.
+- One vision/text call (or a few chunked calls for long videos): sampled frames plus the
+  timestamped transcript → `{premise, characters, tone, running_gags, visual_motifs,
+  targets, scene_beats}`. This becomes shared continuity context for the writers' room.
 - For feature-length input, chunk by ~10-minute windows with overlap and merge.
 
-### Stage 4 — Write (LLM agent, the heart of the app)
-Batched writer calls (batches of ~6–10 gaps). Each request carries:
-- System prompt = **STYLE_GUIDE.md** (see §5) + three voice personas (host/crow/servo
-  archetypes — *original characters*, not the trademarked bots; see §11).
-- Per gap: timecode, duration, **hard word budget**, mid-gap frame (vision),
-  surrounding dialogue lines.
-- Output: strict JSON `[{gap, speaker, line}]` (validated with pydantic; retry on
-  schema failure — this exact loop worked live against Hyper/qwen3.8-flash).
-- Speaker rotation rule + `riff_rate` (~0.55) so silences breathe like the real show.
-- Cheap model for drafting (qwen3.8-flash: $0.15/M in, $0.47/M out, 1M ctx, vision) —
-  measured $0.002 for a 3-gap batch. Optional bigger-model pass to punch up the best
-  candidate gaps.
+### Stage 4 — Cue plan (dense, scored opportunities)
+The baseline count comes from the video's content kind plus the density knob. Cadence cues
+keep continuous-dialogue, music, and fast-cut material alive; pauses, quietness, scene cuts,
+and hot audio moments improve the anchor but are never required. The planner keeps a small
+minimum spacing only to deduplicate near-identical cues, not to forbid adjacent comic beats.
 
-### Stage 5 — Fit (timing guard; the stage that makes or breaks it)
-- TTS each line (Pocket TTS), **measure** actual duration with ffprobe.
-- If spoken > budget: tempo-stretch up to ×1.12 (`atempo`), else **drop the riff**.
-  A missing joke is acceptable; trampling the movie's next line is not.
-- Cache rendered lines keyed by (text, voice) — re-runs after hand-editing the final
-  rendered manifest only re-speak changed lines.
+### Stage 5 — Write (LLM agent, the heart of the app)
+Batched writer calls (batches of ~6–10 cues). Each request carries:
+- The evidence-first theater-commentator prompt and a content-kind register.
+- The timestamped whole-video transcript, continuity profile, running-gag/motif ledger,
+  and local pre/mid/post frames for each cue.
+- A preferred word count and landing window, but no hard silence or duration veto.
+- Output: strict JSON with one grounded riff object per offered cue, including timing
+  intent, comic mechanism, evidence references, and optional callback target.
+- A judge sees the complete draft ledger and rewrites salvageable weak jokes before mix.
 
-### Stage 6 — Mix & overlay
-- **Audio**: original track gets `volume=1−duck*between(t, riff_start, riff_end)`
-  (duck ≈ 0.6–0.7), riffs placed via `adelay` at their exact timecodes with +3–4 dB gain.
-  v2 polish: ffmpeg `sidechaincompress` for smooth automatic ducking with attack/release
-  ramps instead of hard windows.
-- **Overlay**: pre-rendered RGBA theater strip (our `theater_gen.py`) composited for the
-  whole video. v2: the MST3K-look silhouettes (three distinctive head shapes —
-  toilet-tank, crest-mohawk, human — generated as vectors), plus subtle bob/laugh
-  animations triggered at riff moments.
+### Stage 6 — Place (timing is a preference, not a veto)
+- TTS each line and measure actual duration with ffprobe.
+- Apply only a modest speed-up when it improves a button. If the line is longer than
+  its preferred cue, place it anyway over the source dialogue; reject only failed TTS
+  or an impossible video-boundary placement.
+- The writer's signed timing hint can place a setup before the anchor or a button after it.
+- Cache rendered lines keyed by (text, voice) — editor rerenders only re-speak changed lines.
 
-### Stage 7 — Deliver
+### Stage 7 — Mix and deliver
 - Final mp4 (copy video stream when possible, AAC audio), `riffs.srt` for reading along,
   and `riffs.json` containing only the riffs that actually made it into that video.
   Drafts and judge output are kept separately for debugging; editor submissions are
@@ -130,7 +117,7 @@ Batched writer calls (batches of ~6–10 gaps). Each request carries:
   | Understand | qwen3.8-flash (vision) | cheap, huge context, sees frames |
   | Write | qwen3.8-flash | batch cost pennies per movie; fast |
   | Punch-up (optional) | stronger model | only for top ~20% of gaps |
-  | QA judge (optional) | flash | score each riff 1–5, drop <3 |
+  | QA judge | same or separately selected model | rewrite weak lines; drop only when no grounded joke remains |
 - All responses are schema-validated (pydantic); failures retry with the error appended.
 - Prompt cache: STYLE_GUIDE + personas are identical across a job → cache-hit pricing
   ($0.02/M on Hyper) makes long movies even cheaper.
@@ -230,13 +217,13 @@ Keep it lean (it's a utility with one hero output):
 
 ## 9. The timing-precision system (why jokes land "in exactly the right places")
 
-1. Budgets are derived from **measured silence**, not vibes (words/sec calibration).
-2. Writer sees the budget + the frame → riffs sized to the hole they fill.
-3. TTS output is **measured**, not assumed: stretch ≤ ×1.12 or drop.
-4. Placement is sample-accurate via `adelay`; margins keep riffs off dialogue edges.
-5. Ducking guarantees audibility: original drops ~65% under every riff.
-6. Optional QA stage: LLM judge re-watches (reads) each riff in context; weak ones get
-   one rewrite attempt with its critique, then dropped.
+1. Cue opportunities are scored from cadence, scene/visual change, audio energy, quietness,
+   and pauses; silence is not a requirement.
+2. Writer sees exact local evidence plus whole-video transcript and continuity memory.
+3. TTS output is measured for useful timing hints, but overtalk is allowed.
+4. Placement is sample-accurate via `adelay`; only video boundaries are hard.
+5. Sidechain ducking and a limiter preserve speech intelligibility in dense sections.
+6. Judge rewrites weak jokes based on groundedness, comic turn, voice, and intentional timing.
 
 ---
 
@@ -337,5 +324,6 @@ frames + transcript. Stage 4 (WRITE) selects its register from the profile:
 | tutorial | deadpan corrections, over-literal questions |
 | gaming/music | play-by-play heckling, beat-synced one-liners |
 
-Anchor strategy: silence gaps (v1) → + scene cuts (`scdet`) & visual-gag frames (v1.1),
-so fast-cut clips still get well-placed riffs without trampling speech.
+Anchor strategy: dense cadence baseline + scene cuts, audio hot/quiet moments, and actual
+pauses. These signals improve selection and timing intent; they do not veto a strong riff
+just because the source is talking.

@@ -1,6 +1,7 @@
 """mst3k-anything CLI: mst3k render <url-or-path> [options]."""
 import argparse
 import json
+import math
 import os
 import shutil
 import sys
@@ -13,11 +14,19 @@ from . import analyze, config as cfgmod, context, ingest, mix, transcribe, under
 def write_rendered_manifest(job_dir: Path, placements: list[dict]) -> Path:
     """Persist exactly the riffs that mix.build received, in timeline order."""
     manifest = job_dir / "riffs.json"
-    rendered = [{"gap": p["gap"], "speaker": p.get("speaker", "riffer"),
-                 "line": p["line"], "words": p.get("words", len(p["line"].split())),
-                 "when": p.get("when", 0.0), "start": p["start"],
-                 "duration": p["duration"]}
-                for p in sorted(placements, key=lambda p: p["start"])]
+    rendered = []
+    for placement in sorted(placements, key=lambda p: p["start"]):
+        item = {"gap": placement["gap"],
+                "speaker": placement.get("speaker", "riffer"),
+                "line": placement["line"],
+                "words": placement.get("words", len(placement["line"].split())),
+                "when": placement.get("when", 0.0),
+                "start": placement["start"],
+                "duration": placement["duration"]}
+        for key in ("timing", "mechanism", "evidence", "callback_to", "overlap_allowed"):
+            if key in placement:
+                item[key] = placement[key]
+        rendered.append(item)
     tmp = manifest.with_suffix(".tmp")
     tmp.write_text(json.dumps(rendered, indent=2))
     tmp.replace(manifest)
@@ -68,29 +77,33 @@ def cmd_render(args) -> None:
     (job_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     print(f"    {meta['title'] or 'untitled'} ({meta['duration']:.0f}s, {meta['width']}x{meta['height']})")
 
-    # 2 determine kind first so density picks the right pace
-    # Use understand (sees frames) *and* metadata so we don't guess from a title.
-    # Note: understand makes its own LLM call; we cache the profile in job_dir.
+    # 2 transcribe before profiling so the analyst and writer get real dialogue
+    # context. The ASR stage is chunked and cached, so long videos are bounded.
+    asr = step("transcribe", lambda: transcribe.transcribe(job))
+    job["transcript"] = asr
+
+    # 3 determine kind after a first frame pass plus transcript. This profile
+    # supplies scene/motif/callback guidance to the dense cue planner and writer.
     step("frames", lambda: analyze.grab_frames(job, []))
     profile = step("understand", lambda: understand.build_profile(job))
     job["kind"] = (profile or {}).get("kind", "other")
 
-    # 3 gaps (density depends on job["kind"])
+    # 4 cues: silence is only one signal; cadence guarantees the requested
+    # baseline even when a video has continuous dialogue or music.
     gaps = step("gaps", lambda: analyze.find_gaps(job))
     kinds = "+".join(sorted({g["kind"] for g in gaps}))
-    print(f"    {len(gaps)} riff windows ({kinds or 'none'}), target={job['target_riff_count']} for kind={job['kind']}")
+    print(f"    {len(gaps)} riff cues ({kinds or 'none'}), target={job['target_riff_count']} for kind={job['kind']}")
     if not gaps:
-        print("No usable riff windows.")
+        print("No usable riff cues.")
         sys.exit(0)
     step("frames", lambda: analyze.grab_frames(job, gaps))
     analyze.score_visual_interest(job, gaps)
-    hot = analyze.hot_moments(job, job["dir"] / "audio.wav")
+    hot = analyze.hot_moments(job, job["dir"] / "audio.wav") if meta.get("has_audio", True) else []
     (job_dir / "gaps.json").write_text(json.dumps(gaps, indent=2))
     (job_dir / "hot_moments.json").write_text(json.dumps(hot, indent=2))
     step("context frames", lambda: context.grab_context_frames(job, gaps, hot))
 
-    # 4 transcribe + bundles
-    asr = step("transcribe", lambda: transcribe.transcribe(job))
+    # 5 bundles now reuse the already completed transcription stage.
     bundles = context.build_bundles(job, gaps, asr, hot)
     (job_dir / "bundles.json").write_text(json.dumps(
         [{k: v for k, v in b.items() if k != "frames"} for b in bundles], indent=1))
@@ -122,8 +135,27 @@ def cmd_render(args) -> None:
                 when = float(item.get("when", 0.0))
             except (TypeError, ValueError):
                 when = 0.0
+            timing = str(item.get("timing") or ("overlap" if when < 0 else "cue"))
+            if timing not in {"cue", "button", "overlap"}:
+                timing = "cue"
+            mechanism = str(item.get("mechanism") or "observation")
+            evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+            try:
+                callback_to = int(item["callback_to"]) if item.get("callback_to") is not None else None
+            except (TypeError, ValueError):
+                callback_to = None
+            requested_start = item.get("start")
+            try:
+                requested_start = float(requested_start) if requested_start is not None else None
+                if requested_start is not None and not math.isfinite(requested_start):
+                    requested_start = None
+            except (TypeError, ValueError):
+                requested_start = None
             riffs.append({"gap": gid, "speaker": str(item.get("speaker") or "riffer"),
-                          "line": line, "words": len(line.split()), "when": when})
+                          "line": line, "words": len(line.split()), "when": when,
+                          "timing": timing, "mechanism": mechanism,
+                          "evidence": evidence[:2], "callback_to": callback_to,
+                          "_requested_start": requested_start})
         print(f"[write] done in 0.0s", flush=True)
     else:
         riffs = step("write", lambda: writer.write_riffs_with_review(job, gaps, profile, bundles))
@@ -134,49 +166,53 @@ def cmd_render(args) -> None:
         print(f"    using editor manifest: {len(riffs)} riffs")
     print(f"    {note}")
 
-    # 5 synthesize + fit
+    # 6 synthesize + place. The cue envelope is a preferred landing area, not
+    # a hard gate: the show may deliberately talk over dialogue.
     def synth_all():
         out = []
+        duration = float(job["meta"]["duration"])
         for r in riffs:
             g = next((g for g in gaps if g["id"] == r["gap"]), None)
             if not g:
                 continue
             res = voice.synthesize(job, {**r, "_gap": g})
-            if res and res["ok"]:
-                dur = res["duration"]
-
-                # when-hint: writer-specified placement intent
-                when = r.get("when", 0.0)
-                if isinstance(when, (int, float)) and abs(when) > 0.05:
-                    start = g["start"] + max(0.0, when)
-                    if start + dur > g["end"] + 0.05:
-                        # writer's intent doesn't fit — fall through to mid/gap_start
-                        when = 0.0
-                if not isinstance(when, (int, float)) or abs(when) <= 0.05:
-                    start = (g["start"] + job["margin"]) if g.get("at") == "gap_start" else (
-                        (g["start"] + g["end"]) / 2 - dur / 2)
-                headroom = (g["end"] - start) - dur
-                out.append({**r, "start": round(start, 3),
-                            "wav": res["path"], "duration": dur,
-                            "_headroom": round(headroom, 3), "_score": g.get("score", 0)})
+            if not res or not res.get("ok"):
+                print(f"    drop gap{r['gap']}: synthesis unavailable")
+                continue
+            dur = res["duration"]
+            try:
+                when = float(r.get("when", 0.0))
+            except (TypeError, ValueError):
+                when = 0.0
+            anchor = float(g.get("anchor", g["start"]))
+            requested_start = r.get("_requested_start")
+            if isinstance(requested_start, (int, float)) and math.isfinite(requested_start):
+                start = requested_start
             else:
-                print(f"    drop gap{r['gap']}: doesn't fit")
+                start = anchor + when
+            # Only the physical video boundaries are hard. A negative offset
+            # is valid setup overlap; a long line may run over dialogue.
+            start = max(0.0, min(start, max(0.0, duration - dur)))
+            placed_dur = min(dur, max(0.0, duration - start))
+            if placed_dur <= 0.0:
+                print(f"    drop gap{r['gap']}: no video time remains")
+                continue
+            headroom = (g["end"] - start) - placed_dur
+            out.append({**r, "start": round(start, 3),
+                        "wav": res["path"], "duration": placed_dur,
+                        "_headroom": round(headroom, 3),
+                        "_score": g.get("score", 0),
+                        "overlap_allowed": bool(g.get("overlap_allowed", True)),
+                        "timing": r.get("timing", "cue"),
+                        "mechanism": r.get("mechanism", "observation"),
+                        "evidence": r.get("evidence", []),
+                        "callback_to": r.get("callback_to")})
         return out
 
-    placements = step("synthesize+fit", synth_all)
-    fit_note = f"{len(placements)}/{len(riffs)} riff{'s' if len(riffs) > 1 else ''} fit"
-    # over-generation: keep the target count, prefer snug fits + better moments
-    target = job["target_riff_count"]
-    if len(placements) > target:
-        ranked = sorted(placements, key=lambda p: (p["_headroom"], -p["_score"]))
-        dropped = {p["gap"] for p in ranked[target:]}
-        for p in placements:
-            if p["gap"] in dropped:
-                print(f"    cut gap{p['gap']}: over target")
-        placements = [p for p in placements if p["gap"] not in dropped]
-    print(f"    placed {len(placements)} of {len(riffs)} written ({fit_note})")
+    placements = step("synthesize+place", synth_all)
+    print(f"    placed {len(placements)} of {len(riffs)} written; dialogue overlap is allowed")
 
-    # 6 mix (includes theater overlay: animated webm, PNG fallback, or none)
+    # 7 mix (includes theater overlay: animated webm, PNG fallback, or none)
     built = step("mix", lambda: mix.build(job, placements))
 
     out_dir = Path(args.out).resolve() if args.out else job_dir

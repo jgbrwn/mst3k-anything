@@ -28,43 +28,36 @@ DEFAULTS = {
     "riff_gain": 1.4,
     "duck_amount": 0.65,
     # timing/comedy
-    "min_gap": 0.8,
-    "margin": 0.2,
-    "lead_in_sec": 3.0,              # don't riff in the first N sec (titles/logos)
-    "max_riff_seconds": 9.0,
-    "words_per_second": 2.0,         # Pocket TTS measured rate (~2.0 wps actual)
-    "max_tempo_stretch": 2.0,
-    "max_riffs": 400,
-    # riff-window detection
-    # Density is computed per video as
-    #   target = clamp(pool_available, duration/riff_pace_lo, duration/riff_pace_hi)
-    # where riff_pace_* is seconds-of-video between riffs (lower = denser).
-    # Defaults: movie ~60s, vlog ~25s, everything else ~35s. Cap at max_riffs.
+    "min_gap": 0.35,              # only the minimum pause signal; not a riff gate
+    "margin": 0.15,               # preferred landing margin, not a hard boundary
+    "lead_in_sec": 3.0,            # avoid title cards/logos by default
+    "short_clip_lead_ratio": 0.1,   # explicit policy for clips shorter than the lead-in
+    "max_riff_seconds": 9.0,       # preferred spoken length; overtalk may exceed it
+    "words_per_second": 2.0,       # Pocket TTS measured rate (~2.0 wps actual)
+    "max_tempo_stretch": 1.18,     # modest speed-up; long riffs may overlap dialogue
+    "max_riffs": 400,              # emergency safety ceiling only
+    # riff-window detection: lo/hi are seconds between *baseline* cues. Silence
+    # and quietness improve ranking, but cadence cues guarantee coverage.
     "riff_pace_per_kind": {
-        "movie":      {"lo": 40.0,  "hi": 90.0},
-        "tv":         {"lo": 35.0,  "hi": 80.0},
-        "vlog":       {"lo": 35.0,  "hi": 75.0},
-        "tutorial":   {"lo": 30.0,  "hi": 70.0},
-        "gaming":     {"lo": 15.0,  "hi": 35.0},
-        "music":      {"lo": 20.0,  "hi": 40.0},
-        "home":       {"lo": 30.0,  "hi": 70.0},
-        "commercial": {"lo": 20.0,  "hi": 45.0},
-        "other":      {"lo": 30.0,  "hi": 70.0},
+        "movie":      {"lo": 18.0, "hi": 30.0},
+        "tv":         {"lo": 16.0, "hi": 27.0},
+        "vlog":       {"lo": 14.0, "hi": 24.0},
+        "tutorial":   {"lo": 15.0, "hi": 26.0},
+        "gaming":     {"lo": 10.0, "hi": 18.0},
+        "music":      {"lo": 12.0, "hi": 22.0},
+        "home":       {"lo": 15.0, "hi": 26.0},
+        "commercial": {"lo": 10.0, "hi": 20.0},
+        "other":      {"lo": 16.0, "hi": 27.0},
     },
-    # (target_riff_count used to be picked here; modern flow derives it from
-    # riff_pace_per_kind at runtime, so no fixed cap is needed. Set
-    # TARGET_RIFF_COUNT in .env only to intentionally cap below the calc.)
-    "window_pool_factor": 1.6,       # pool = ceil(target * factor) — overgen for judge prune
-    "silence_ratio_ok": 0.04,
-    "min_silence_frac": 0.5,
+    "window_pool_factor": 1.0,
+    "context_radius_sec": 18.0,
+    "writer_batch_size": 8,
+    "max_line_chars": 240,
     "moment_win_sec": 1.6,
     "moment_hop_sec": 1.2,
-    "silence_gate_db": "-25dB",       # primary riff-window detection
-    "silence_min_dur": 0.5,           # silencedetect d= arg (s)
-    "speech_noise_db": "-42dB",       # audible-speech gate for moment rejection
-    "speech_dur": 0.2,                # even 200ms at this level = audible
-    "min_riff_space_sec": 10.0,
-    "moment_relax_db": 3.0,          # moments must be *quieter* than median, not just not-loud
+    "silence_gate_db": "-25dB",     # ranking signal, not an eligibility gate
+    "silence_min_dur": 0.35,
+    "min_riff_space_sec": 2.5,       # only dedupes near-identical cues
 
     # media
     "frame_width": 640,
@@ -94,12 +87,25 @@ def load() -> dict:
     if env.get("LLM_MODEL"): cfg["llm_model"] = env["LLM_MODEL"]
     if env.get("LLM_UNDERSTAND_MODEL"): cfg["llm_understand_model"] = env["LLM_UNDERSTAND_MODEL"]
     if env.get("TARGET_RIFF_COUNT"):
-        cfg["target_riff_count"] = int(env["TARGET_RIFF_COUNT"])
+        try: cfg["target_riff_count"] = int(env["TARGET_RIFF_COUNT"])
+        except ValueError: pass
+    if env.get("CONTEXT_RADIUS_SEC"):
+        try: cfg["context_radius_sec"] = float(env["CONTEXT_RADIUS_SEC"])
+        except ValueError: pass
+    if env.get("SHORT_CLIP_LEAD_RATIO"):
+        try: cfg["short_clip_lead_ratio"] = float(env["SHORT_CLIP_LEAD_RATIO"])
+        except ValueError: pass
+    if env.get("MIN_RIFF_SPACE_SEC"):
+        try: cfg["min_riff_space_sec"] = float(env["MIN_RIFF_SPACE_SEC"])
+        except ValueError: pass
+    if env.get("MAX_RIFFS"):
+        try: cfg["max_riffs"] = int(env["MAX_RIFFS"])
+        except ValueError: pass
+    if env.get("RIFF_GAIN") or env.get("RIFT_GAIN"):
+        try: cfg["riff_gain"] = float(env.get("RIFF_GAIN") or env.get("RIFT_GAIN"))
+        except ValueError: pass
     if env.get("VOICE_REF"): cfg["voice_ref"] = env["VOICE_REF"]
     if env.get("VOICE_PITCH"):
         try: cfg["voice_pitch"] = float(env["VOICE_PITCH"])
-        except ValueError: pass
-    if env.get("RIFT_GAIN"):
-        try: cfg["riff_gain"] = float(env["RIFT_GAIN"])
         except ValueError: pass
     return cfg

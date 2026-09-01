@@ -117,7 +117,12 @@ def resolve(job: dict, role: str = "write") -> dict:
                     job.get("model"))
     table = load_providers()
     row = table.get(prov)
-    if not row or not row.get("key"):
-        prov, row = "hyper", table["hyper"]  # safe default
+    if not row:
+        raise RuntimeError(f"unknown LLM provider {prov!r}")
+    if not row.get("key"):
+        raise RuntimeError(f"LLM provider {prov!r} has no API key configured")
+    model = override_mod or row.get("default_model")
+    if not model:
+        raise RuntimeError(f"LLM provider {prov!r} has no model configured")
     return {"provider": prov, "base_url": row["base_url"], "key": row["key"],
-            "model": override_mod or row.get("default_model")}
+            "model": model}

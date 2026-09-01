@@ -70,15 +70,53 @@ class LLM:
                 raise RuntimeError(f"LLM unreachable at {self.api_base}: {exc}") from exc
         if last_err:
             raise last_err
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError(f"LLM response from {self.api_base} contained no choices")
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    value = block.get("text") or block.get("content")
+                    if isinstance(value, str):
+                        parts.append(value)
+            if parts:
+                return "".join(parts)
+        raise RuntimeError(f"LLM response from {self.api_base} contained no text content")
 
     def chat_json(self, messages: list[dict], temperature: float = 0.9,
                   max_tokens: int = 2000):
-        """Chat + defensive JSON extraction (models love fences/prose)."""
+        """Chat + defensive JSON extraction, repairing truncated model output once."""
+        def parse(raw):
+            s = raw.replace("```json", "```").replace("```", "")
+            return json.loads(_extract_json(s))
+
         raw = self.chat(messages, temperature, max_tokens)
-        # strip markdown fences wherever they are
-        s = raw.replace("```json", "```").replace("```", "")
-        return json.loads(_extract_json(s))
+        try:
+            return parse(raw)
+        except (json.JSONDecodeError, TypeError) as first:
+            # Large structured profiles and dense riff batches can hit the
+            # provider's output limit. A second, terse JSON-only turn avoids
+            # turning a recoverable formatting/truncation issue into a failed job.
+            repair = list(messages) + [{"role": "user", "content":
+                "Your previous JSON response was incomplete or invalid. Return the "
+                "complete requested JSON only, with no markdown or explanation. "
+                "Keep descriptions compact and do not omit required items."}]
+            try:
+                repaired = self.chat(repair, min(temperature, 0.4),
+                                     max(max_tokens, min(max_tokens * 2, 4000)))
+                return parse(repaired)
+            except (json.JSONDecodeError, TypeError) as second:
+                tail = str(raw)[-400:]
+                raise RuntimeError(
+                    f"LLM returned invalid JSON after repair: {second}; response tail: {tail!r}"
+                ) from first
 
 
 def _extract_json(s: str) -> str:

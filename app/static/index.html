@@ -100,12 +100,12 @@
     <select id="judgeProvider" aria-label="Judge LLM provider">
       <option value="">Judge = same as writer</option>
     </select>
-    <select id="riffDensity" aria-label="Riff density" title="How many riffs to write. The default picks a count based on video length + content type. Lower = sparser (trust the movie more), Higher = denser (more heckling).">
-      <option value="0">Extra sparse</option>
-      <option value="1">Sparse</option>
-      <option value="2" selected>Default</option>
+    <select id="riffDensity" aria-label="Riff density" title="How many riffs to write. Lively is the new baseline; higher settings add more cue opportunities. Silence and dialogue do not gate riffing.">
+      <option value="0">Sparse</option>
+      <option value="1">Light</option>
+      <option value="2" selected>Lively (default)</option>
       <option value="3">Dense</option>
-      <option value="4">Extra dense</option>
+      <option value="4">Relentless</option>
     </select>
     <div class="writer-line" id="writerLine" title="These are the models that will be used for this submission.">
       <span>Writer: <b id="writerModelLine">—</b> · <b id="writerBaseLine">—</b></span>

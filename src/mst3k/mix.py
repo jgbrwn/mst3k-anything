@@ -25,14 +25,19 @@ def build(job: dict, placements: list[dict]) -> dict:
             make_theater(png, src_w)
         overlay_src = png
 
-    # --- SRT of the riff track (read-along / verify artifact) ---
+    # --- SRT of the actual riff audio spans (read-along / verify artifact) ---
+    duration = max(0.0, float(job["meta"].get("duration", 0.0)))
     def ts(s):
         h, rem = divmod(s, 3600)
         m, s = divmod(rem, 60)
         return f"{int(h):02d}:{int(m):02d}:{s:06.3f}".replace(".", ",")
     with open(srt, "w") as f:
         for i, p in enumerate(sorted(placements, key=lambda p: p["start"]), 1):
-            f.write(f"{i}\n{ts(p['start'])} --> {ts(p['start'] + p['duration'])}\n"
+            start = max(0.0, float(p["start"]))
+            end = min(duration, start + max(0.0, float(p["duration"])))
+            if end <= start:
+                continue
+            f.write(f"{i}\n{ts(start)} --> {ts(end)}\n"
                     f"{p['line']}\n\n")
 
     if not placements:
@@ -45,9 +50,11 @@ def build(job: dict, placements: list[dict]) -> dict:
                 cmd += ["-stream_loop", "-1"]
             else:
                 cmd += ["-loop", "1"]
+            overlay_eof = ("shortest=1:eof_action=endall"
+                           if overlay_src.suffix == ".webm" else "eof_action=repeat")
             cmd += ["-i", str(overlay_src), "-filter_complex",
-                    "[0:v][1:v]overlay=0:H-h[vout]", "-map", "[vout]", "-map", "0:a?",
-                    "-shortest"]
+                    f"[0:v][1:v]overlay=x=(W-w)/2:y=H-h:{overlay_eof}[vout]",
+                    "-map", "[vout]", "-map", "0:a?", "-shortest"]
         else:
             cmd += ["-c", "copy"]
         cmd.append(str(out))
@@ -59,36 +66,49 @@ def build(job: dict, placements: list[dict]) -> dict:
     has_theater = theater.exists()
 
     inputs = ["-i", str(job["source"])]
+    source_audio_idx = 0
+    riff_base_idx = 1
+    if not job.get("meta", {}).get("has_audio", True):
+        # A video-only submission still gets a valid riff audio bus.
+        inputs += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        source_audio_idx = 1
+        riff_base_idx = 2
     for p in placements:
         inputs += ["-i", str(p["wav"])]
     tidx = None
     if overlay_src:
-        tidx = len(placements) + 1
+        tidx = riff_base_idx + len(placements)
         if overlay_src.suffix == ".webm":
             inputs += ["-stream_loop", "-1"]
         inputs += ["-i", str(overlay_src)]
 
     parts = []
-    duration = job["meta"]["duration"]
-    for i, p in enumerate(placements, start=1):
+    for i, p in enumerate(placements, start=0):
         delay_ms = int(p["start"] * 1000)
         # apad + atrim forces the riff bus to span the whole timeline so amix
         # doesn't treat EOF as a dropout, and the sidechaincompress sidechain
         # always has input after the riff ends (fixes post-riff silence).
         parts.append(
-            f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"[{riff_base_idx + i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
             f"adelay={delay_ms}|{delay_ms},apad,atrim=0:{duration:.3f},"
-            f"volume={job['riff_gain']:.2f}[r{i}]")
+            f"volume={job['riff_gain']:.2f}[r{i + 1}]")
     # sidechain ducking: riffs (concatenated) drive a compressor that pushes
     # the original track down while a riff is active, then recovers smoothly
     riff_inputs = "".join(f"[r{i}]" for i in range(1, len(placements) + 1))
-    parts.append(f"{riff_inputs}amix=inputs={len(placements)}:normalize=0[sc]")
-    parts.append(f"[0:a]anull[a1]")
+    duck_amount = max(0.0, min(0.95, float(job.get("duck_amount", 0.65))))
+    duck_ratio = 1.0 + duck_amount * 9.0
+    parts.append(f"{riff_inputs}amix=inputs={len(placements)}:normalize=0,"
+                 "alimiter=limit=0.95[sc]")
+    parts.append(f"[{source_audio_idx}:a]anull[a1]")
     parts.append(f"[sc]asplit=2[sc_d][sc_mix]")
-    parts.append(f"[a1][sc_d]sidechaincompress=threshold=-30dB:ratio=6:attack=80:release=400:makeup=1.0[ducked]")
-    parts.append(f"[ducked][sc_mix]amix=inputs=2:normalize=0[aout]")
+    parts.append(f"[a1][sc_d]sidechaincompress="
+                 f"threshold=-30dB:ratio={duck_ratio:.2f}:attack=80:release=400:makeup=1.0[ducked]")
+    parts.append(f"[ducked][sc_mix]amix=inputs=2:normalize=0,"
+                 "alimiter=limit=0.97[aout]")
     if overlay_src:
-        parts.append(f"[0:v][{tidx}:v]overlay=0:H-h[vout]".replace("0:H-h", "(W-w)/2:H-h"))
+        overlay_eof = ("shortest=1:eof_action=endall"
+                       if overlay_src.suffix == ".webm" else "eof_action=repeat")
+        parts.append(f"[0:v][{tidx}:v]overlay=x=(W-w)/2:y=H-h:{overlay_eof}[vout]")
 
     fc = ";".join(parts)
     cmd = ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", fc]

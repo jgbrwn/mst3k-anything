@@ -321,6 +321,11 @@ async def create_job(req: Request):
     if jprov and not jmodel:
         jmodel = (table.get(jprov) or {}).get("default_model")
 
+    if not model:
+        raise HTTPException(400, f"{provider} requires an explicit writer model")
+    if jprov and not jmodel:
+        raise HTTPException(400, f"{jprov} requires an explicit judge model")
+
     # optional density bias: 0=extra-low,1=low,2=default,3=high,4=extra-high
     bias = body.get("riff_density_bias")
     try:
@@ -368,13 +373,14 @@ def list_jobs():
 
 
 STAGES = [
-    ("ingest", 5),       # download
-    ("gaps", 15),        # silence scan
-    ("frames", 25),      # frame grabs
-    ("transcribe", 35),  # ASR
-    ("understand", 45),  # video profile
-    ("write", 75),       # + judge pass
-    ("synthesize+fit", 90),
+    ("ingest", 5),            # download
+    ("transcribe", 20),       # chunked ASR
+    ("frames", 30),            # profile/cue frames
+    ("understand", 40),        # video + transcript profile
+    ("gaps", 50),              # scored cue plan
+    ("context frames", 60),    # cue setup/payoff frames
+    ("write", 75),             # writer + judge pass
+    ("synthesize+place", 90),
     ("mix", 100),
 ]
 STAGE_ORDER = {name: i for i, (name, _) in enumerate(STAGES)}
@@ -668,8 +674,29 @@ async def rerender(jid: int, req: Request):
             raise ValueError("riffs.json must be a JSON array")
     except Exception as e:
         raise HTTPException(400, f"invalid riffs.json: {e}")
+    seen = set()
+    for index, item in enumerate(parsed, 1):
+        if not isinstance(item, dict):
+            raise HTTPException(400, f"riffs.json item {index} must be an object")
+        try:
+            gap_id = int(item.get("gap"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"riffs.json item {index} has an invalid gap")
+        if gap_id in seen:
+            raise HTTPException(400, f"duplicate gap {gap_id} in riffs.json")
+        seen.add(gap_id)
 
     work_dir = _job_work_dir(row)
+    gaps_path = work_dir / "gaps.json"
+    if gaps_path.exists():
+        try:
+            known = {int(item["id"]) for item in json.loads(gaps_path.read_text())}
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            known = set()
+        if known:
+            unknown = sorted(seen - known)
+            if unknown:
+                raise HTTPException(400, f"riffs.json references unknown gap(s): {unknown}")
     work_dir.mkdir(parents=True, exist_ok=True)
     requested = work_dir / "requested_riffs.json"
     tmp = requested.with_suffix(".tmp")

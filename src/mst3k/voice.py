@@ -11,10 +11,23 @@ import re
 import subprocess
 from pathlib import Path
 
+from .cache import file_signature, value_digest
 
-def _cache_key(line: str, voice_name: str) -> str:
-    blob = json.dumps({"t": line, "v": voice_name}, sort_keys=True)
-    return hashlib.sha256(blob.encode()).hexdigest()[:20]
+
+def _cache_key(line: str, voice_name: str, voice: dict | None = None,
+               job: dict | None = None) -> str:
+    voice = voice or {}
+    job = job or {}
+    blob = {
+        "version": 2,
+        "text": line,
+        "voice": voice_name,
+        "pitch": float(voice.get("pitch", job.get("voice_pitch", 0.0)) or 0.0),
+        "rate": float(voice.get("rate", job.get("voice_rate", 1.0)) or 1.0),
+        "voice_ref": file_signature(job["voice_ref"]) if job.get("voice_ref") else None,
+        "hints": hint_filters(line),
+    }
+    return value_digest(blob)[:20]
 
 
 def pick_voice(job: dict, riff: dict) -> dict:
@@ -36,33 +49,43 @@ def pick_voice(job: dict, riff: dict) -> dict:
 def synthesize(job: dict, riff: dict) -> dict:
     """Render one riff to wav. Returns {path, duration, tempo, ok} or None if dropped.
     Voice is picked deterministically per riff; expressiveness hints in the line
-    (*word* / trailing …/!/?) get baked into ffmpeg tone tweaks."""
+    (*word* / trailing …/!/?) get baked into ffmpeg tone tweaks. A long line is
+    returned as an intentional overlap rather than rejected for timing."""
     voice = pick_voice(job, riff)
     vname = voice["name"] or ""
     cache = job["dir"] / "tts"
     cache.mkdir(exist_ok=True)
-    key = _cache_key(riff["line"], vname)
+    key = _cache_key(riff["line"], vname, voice, job)
     wav = cache / f"{key}.wav"
+    if wav.exists() and probe_duration(wav) <= 0:
+        wav.unlink(missing_ok=True)
     if not wav.exists():
+        tmp = cache / f"{key}.tmp.wav"
+        tmp.unlink(missing_ok=True)
         cmd = [job["pocket_tts"], "generate", "-q", "--text", riff["line"],
-               "--output-path", str(wav)]
+               "--output-path", str(tmp)]
         if vname:
             cmd += ["--voice", vname]
         if job["voice_ref"]:
             cmd += ["--voice", job["voice_ref"]]
         subprocess.run(cmd, check=True, capture_output=True)
+        if probe_duration(tmp) <= 0:
+            tmp.unlink(missing_ok=True)
+            return None
+        tmp.replace(wav)
 
     dur = probe_duration(wav)
     if dur <= 0:
         return None
-    gap = riff["_gap"]
-    budget = gap["usable"]
+    preferred = max(0.8, float(riff["_gap"].get("usable", job["max_riff_seconds"])))
     tempo = 1.0
-    if dur > budget:
-        needed = dur / budget
-        if needed > job["max_tempo_stretch"]:
-            return None  # can't fit without chipmunking — drop it
-        tempo = needed
+    if dur > preferred:
+        needed = dur / preferred
+        # A modest squeeze is useful for a button, but exceeding the preferred
+        # envelope is deliberately allowed. Dialogue overlap is a feature, not
+        # a failed fit, so never discard a grounded riff for timing alone.
+        if needed <= job["max_tempo_stretch"]:
+            tempo = needed
 
     af = []
     # base voice coloring (pitch per character)
@@ -70,6 +93,9 @@ def synthesize(job: dict, riff: dict) -> dict:
     if abs(pitch) > 0.05:
         st = 2 ** (pitch / 12)
         af.append(f"asetrate=24000*{st},aresample=24000")
+    rate = float(voice.get("rate", job.get("voice_rate", 1.0)))
+    if abs(rate - 1.0) > 0.01:
+        af.append(f"atempo={max(0.5, min(2.0, rate)):.4f}")
     if tempo != 1.0:
         # 1.1x headroom callout: stretch slightly under target so silent holder
         # doesn't swallow the tail; atempo chain hits <2.0 max via loop
@@ -82,15 +108,24 @@ def synthesize(job: dict, riff: dict) -> dict:
 
     if af:
         out = cache / f"{key}_final.wav"
+        if out.exists() and probe_duration(out) <= 0:
+            out.unlink(missing_ok=True)
         if not out.exists():
+            tmp = cache / f"{key}_final.tmp.wav"
+            tmp.unlink(missing_ok=True)
             subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(wav),
-                            "-af", ",".join(af), str(out)], check=True)
+                            "-af", ",".join(af), str(tmp)], check=True)
+            if probe_duration(tmp) <= 0:
+                tmp.unlink(missing_ok=True)
+                return None
+            tmp.replace(out)
         wav = out
         dur = probe_duration(wav)
         if dur <= 0:
             return None
     return {"path": wav, "duration": dur, "tempo": tempo, "voice": vname,
-            "ok": dur <= budget + 0.05}
+            "ok": True, "preferred_duration": preferred,
+            "overlaps_dialogue": dur > preferred + 0.05}
 
 
 def hint_filters(line: str) -> list:

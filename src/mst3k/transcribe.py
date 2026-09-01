@@ -12,6 +12,7 @@ import wave
 ASR_VENV = Path(__file__).resolve().parents[2] / "asr-venv"
 MODEL_DIR = Path(__file__).resolve().parents[2] / "models" / "parakeet-ctc"
 ASR_CHUNK_SECONDS = 60
+TRANSCRIPT_POLICY_VERSION = 2
 
 _RUNNER = r'''
 import json, os, sys, wave
@@ -56,6 +57,13 @@ def _write_json(path: Path, data: dict) -> None:
     tmp.replace(path)
 
 
+def _transcript_policy(audio: Path | None) -> dict:
+    from .cache import file_signature
+    return {"version": TRANSCRIPT_POLICY_VERSION,
+            "chunk_seconds": ASR_CHUNK_SECONDS,
+            "audio": file_signature(audio) if audio else None}
+
+
 def _chunk_error(exc: subprocess.CalledProcessError, index: int, total: int) -> RuntimeError:
     if exc.returncode < 0:
         try:
@@ -80,10 +88,37 @@ def transcribe(job: dict) -> dict:
     are cached individually, making a retry resume after an interrupted chunk.
     """
     cache = job["dir"] / "transcript.json"
-    if cache.exists():
-        return json.loads(cache.read_text())
     from . import analyze
-    audio = analyze.extract_audio(job)
+    has_audio = job.get("meta", {}).get("has_audio", True)
+    audio = analyze.extract_audio(job) if has_audio else None
+    marker = job["dir"] / "transcript_policy.json"
+    policy = _transcript_policy(audio)
+    cache_valid = False
+    if cache.exists() and marker.exists():
+        try:
+            cache_valid = json.loads(marker.read_text()) == policy
+            if cache_valid:
+                return json.loads(cache.read_text())
+        except (OSError, json.JSONDecodeError):
+            cache_valid = False
+    chunk_dir = job["dir"] / "asr_chunks"
+    if chunk_dir.exists() and not cache_valid:
+        try:
+            old_policy = json.loads(marker.read_text()) if marker.exists() else None
+        except (OSError, json.JSONDecodeError):
+            old_policy = None
+        if old_policy is not None and old_policy != policy:
+            # Source/settings changed: never combine chunks from another recording.
+            for old_chunk in chunk_dir.glob("*.json"):
+                old_chunk.unlink(missing_ok=True)
+    if not has_audio:
+        out = {"text": "", "lines": [], "words": [], "timestamps": []}
+        _write_json(job["dir"] / "transcript_raw.json", out)
+        _write_json(cache, out)
+        _write_json(marker, policy)
+        return out
+    if audio is None:
+        raise RuntimeError("ASR audio is unavailable")
     script = _RUNNER.replace("MODEL", str(MODEL_DIR))
     runner = job["dir"] / "_asr_run.py"
     runner.write_text(script)
@@ -96,6 +131,7 @@ def transcribe(job: dict) -> dict:
     if sample_rate <= 0 or total_frames <= 0:
         out = {"text": "", "lines": [], "words": [], "timestamps": []}
         _write_json(cache, out)
+        _write_json(marker, policy)
         return out
     duration = total_frames / sample_rate
     chunk_seconds = ASR_CHUNK_SECONDS
@@ -144,6 +180,7 @@ def transcribe(job: dict) -> dict:
     out = {"text": raw["text"], "lines": lines,
            "words": raw["words"], "timestamps": raw["timestamps"]}
     _write_json(cache, out)
+    _write_json(marker, policy)
     return out
 
 

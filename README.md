@@ -5,12 +5,14 @@
 
 ![screenshot — main UI](docs/shots/ui-main.png)
 
-**What it does.** Downloads a video, listens for natural pauses, transcribes the speech,
-figures out what's on screen just before/after each pause, asks an LLM to write
-MST3K-style jokes for those exact moments, synthesizes the jokes with PocketTTS
-in two voices (Alba + Jane), ducks the original audio dynamically, and mixes the
-riffs in. You watch in a side-by-side player that lets you drag to compare the original
-versus the riffed pass.
+**What it does.** Downloads a video, builds a dense plan of potential riff cues from
+cadence, visual changes, audio energy, and natural pauses, transcribes the speech,
+figures out what's on screen and what led into each cue, asks an LLM to write
+context-specific jokes and callbacks, synthesizes them with PocketTTS in two voices,
+sidechain-ducks the original audio, and mixes the riffs in. Dialogue overlap is an
+intentional option; timing windows guide the landing rather than vetoing a good joke.
+You watch in a side-by-side player that lets you drag to compare the original versus the
+riffed pass.
 
 ![screenshot — provider picker](docs/shots/ui-providers.png)
 
@@ -22,9 +24,9 @@ versus the riffed pass.
   Each riff candidate gets a *bundle*: transcript before/after, frames at T-3 / T / T+3,
   hot-moment markers from the audio, and (for callbacks) the *full* transcript so a riff
   at 2:00 can refer to something said at 0:15.
-- **Silence-true placement** — riffs only go where ffmpeg actually detects quiet audio
-  or where a paired silence listener says there's a window. No more riffs stepped on
-  by dialogue.
+- **Dense, evidence-first cueing** — cadence keeps the show alive even over continuous
+  dialogue; silence, quietness, scene changes, audio energy, and visual beats improve
+  cue selection rather than acting as hard gates.
 - **CPU-safe long-form ASR** — Parakeet processes audio in bounded 60-second worker
   chunks with per-chunk cache files, so long videos do not feed one unbounded offline
   decode stream and exhaust host memory.
