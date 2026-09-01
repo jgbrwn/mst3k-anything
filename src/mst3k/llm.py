@@ -36,9 +36,10 @@ class LLM:
         # output budget in hidden reasoning and return content=null. Keep their
         # required reasoning pass low and request only the final answer for
         # structured calls.
-        if json_mode and "openrouter.ai" in self.api_base and self.model.lower().startswith("z-ai/"):
-            body["reasoning_effort"] = "low"
-            body["include_reasoning"] = False
+        if json_mode:
+            options = self._reasoning_options()
+            body.update(options)
+
         req = urllib.request.Request(
             f"{self.api_base}/chat/completions",
             data=json.dumps(body).encode(),
@@ -103,6 +104,21 @@ class LLM:
             if isinstance(value, str) and value.strip():
                 return value
         raise RuntimeError(f"LLM response from {self.api_base} contained no text content")
+
+    def _reasoning_options(self) -> dict:
+        """Return only explicitly/known-supported reasoning controls.
+
+        OpenAI-compatible gateways do not share a universal parameter contract.
+        Empty-content/JSON retries are universal; reasoning controls are sent
+        only for the observed OpenRouter GLM family or when the operator opts in
+        for a compatible provider/model via MST3K_REASONING_EFFORT.
+        """
+        effort = os.environ.get("MST3K_REASONING_EFFORT")
+        known_glm = ("openrouter.ai" in self.api_base and
+                     self.model.lower().startswith("z-ai/"))
+        if not effort and not known_glm:
+            return {}
+        return {"reasoning_effort": effort or "low", "include_reasoning": False}
 
     def chat_json(self, messages: list[dict], temperature: float = 0.9,
                   max_tokens: int = 2000):

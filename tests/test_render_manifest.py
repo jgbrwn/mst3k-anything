@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -76,7 +77,16 @@ class RenderManifestTests(unittest.TestCase):
         with patch.object(client, "chat", side_effect=['{"x":', '{"x": 1}']):
             self.assertEqual(client.chat_json([{"role": "user", "content": "json"}])["x"], 1)
 
-    def test_llm_retries_an_empty_gateway_content_response(self):
+    def test_reasoning_controls_are_known_or_explicitly_opted_in(self):
+        glm = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
+        generic = llm.LLM("https://api.example/v1", "key", "model")
+        self.assertEqual(glm._reasoning_options(),
+                         {"reasoning_effort": "low", "include_reasoning": False})
+        self.assertEqual(generic._reasoning_options(), {})
+        with patch.dict(os.environ, {"MST3K_REASONING_EFFORT": "low"}):
+            self.assertEqual(generic._reasoning_options(),
+                             {"reasoning_effort": "low", "include_reasoning": False})
+
         client = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
         with patch.object(client, "chat", side_effect=[
             RuntimeError("LLM response from ... contained no text content"),

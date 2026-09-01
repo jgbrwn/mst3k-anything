@@ -3,7 +3,7 @@
 > Paste a video URL. Get back a robot-heckled version, perfectly timed against the
 > original audio — with the two-bot theater sitting at the bottom.
 
-![screenshot — main UI](docs/shots/ui-main.png)
+![current main UI — dense riff controls and resolved Writer/Judge models](docs/shots/ui-main.png)
 
 **What it does.** Downloads a video, builds a dense plan of potential riff cues from
 cadence, visual changes, audio energy, and natural pauses, transcribes the speech,
@@ -14,9 +14,9 @@ intentional option; timing windows guide the landing rather than vetoing a good 
 You watch in a side-by-side player that lets you drag to compare the original versus the
 riffed pass.
 
-![screenshot — provider picker](docs/shots/ui-providers.png)
+![current provider picker — OpenRouter writer and judge models](docs/shots/ui-providers.png)
 
-![screenshot — side-by-side player](docs/shots/ui-player.png)
+![current player and riff editor](docs/shots/ui-player.png)
 
 ## Highlights
 
@@ -42,6 +42,9 @@ riffed pass.
   the same video cannot overwrite each other's logs, PIDs, or outputs.
 - **Multi-provider LLM** — pick Hyper, Neuralwatt, or OpenRouter (full
   OpenRouter high-context multimodal picker included); per-job selectable.
+- **Provider-resilient structured LLM calls** — empty content, structured content blocks,
+  truncated JSON, and transient provider failures are retried for every provider. Provider-
+  specific reasoning controls are applied only when known-supported or explicitly configured.
 
 ## Stack
 
