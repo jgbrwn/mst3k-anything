@@ -7,7 +7,7 @@ from . import llm
 from .cache import file_signature
 
 
-PROFILE_POLICY_VERSION = 2
+PROFILE_POLICY_VERSION = 4
 
 PROFILE_SYSTEM = """You are the continuity editor and comedy scout for an original
 video-riffing pipeline. Analyze only the supplied metadata, timestamped frames, and
@@ -56,7 +56,8 @@ Return ONLY this JSON object:
 }
 
 Be concrete, conservative, and useful to a writer planning a whole set of riffs. Keep
-arrays short (at most 6 targets, 8 motifs/gags, and 12 scene beats) and descriptions terse."""
+the complete JSON compact (under 1,200 tokens): at most 3 characters, 4 running gags,
+4 visual motifs, 5 targets, and 6 scene beats; keep each description under 120 characters."""
 
 
 def _profile_policy(job: dict) -> dict:
@@ -68,6 +69,15 @@ def _profile_policy(job: dict) -> dict:
         "frames": [(frame.name, file_signature(frame))
                    for frame in sorted(frames.glob("ctx*.png"))[:10]],
     }
+
+
+def _fallback_kind(meta: dict) -> str:
+    text = f"{meta.get('title', '')} {meta.get('description', '')}".lower()
+    if any(word in text for word in ("vlog", "driving", "drivin", "tour", "walkthrough", "visit")):
+        return "vlog"
+    if any(word in text for word in ("movie", "film", "episode", "short")):
+        return "movie"
+    return "other"
 
 
 def _transcript_text(job: dict) -> str:
@@ -115,14 +125,16 @@ def build_profile(job: dict) -> dict:
 
     try:
         profile = llm.chat_json(job, PROFILE_SYSTEM, user,
-                                temperature=0.25, max_tokens=2200)
+                                temperature=0.25, max_tokens=1600)
     except Exception as exc:
         print(f"    [understand] unavailable ({exc}); using evidence-only profile", flush=True)
         profile = {}
     if not isinstance(profile, dict):
-        profile = {"kind": "other", "tone": "unknown", "premise": "",
+        profile = {"kind": _fallback_kind(meta), "tone": "unknown", "premise": "",
                    "targets": [], "visual_gags": [], "running_gags": [],
                    "visual_motifs": [], "scene_beats": [], "style_guide": {}}
+    if not profile.get("kind"):
+        profile["kind"] = _fallback_kind(meta)
     profile.setdefault("targets", [])
     profile.setdefault("visual_gags", [])
     profile.setdefault("running_gags", [])

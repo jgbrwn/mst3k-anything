@@ -76,7 +76,14 @@ class RenderManifestTests(unittest.TestCase):
         with patch.object(client, "chat", side_effect=['{"x":', '{"x": 1}']):
             self.assertEqual(client.chat_json([{"role": "user", "content": "json"}])["x"], 1)
 
-    def test_continuous_dialogue_still_gets_cadence_cues(self):
+    def test_llm_retries_an_empty_gateway_content_response(self):
+        client = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
+        with patch.object(client, "chat", side_effect=[
+            RuntimeError("LLM response from ... contained no text content"),
+            '{"ok": true}'
+        ]):
+            self.assertTrue(client.chat_json([{"role": "user", "content": "json"}])["ok"])
+
         with tempfile.TemporaryDirectory() as tmp:
             job = dict(config.DEFAULTS)
             job.update({"dir": Path(tmp), "source": Path("missing.mp4"),
@@ -90,7 +97,17 @@ class RenderManifestTests(unittest.TestCase):
             self.assertEqual(len(cues), job["target_riff_count"])
             self.assertTrue(all(cue["kind"] == "cadence" for cue in cues))
 
-    def test_writer_accepts_over_budget_intentional_overlap(self):
+    def test_writer_context_stops_at_the_cue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "transcript.json"
+            path.write_text(json.dumps({"lines": [
+                {"start": 1.0, "end": 2.0, "text": "already happened"},
+                {"start": 5.0, "end": 6.0, "text": "future reveal"},
+            ]}))
+            context = writer._full_transcript({"dir": Path(tmp)}, [], through=4.0)
+            self.assertIn("already happened", context)
+            self.assertNotIn("future reveal", context)
+
         gaps = [{"id": 1, "start": 10.0, "end": 11.0, "budget_words": 2}]
         job = {"max_line_chars": 240}
         result = writer._normalize_response([{

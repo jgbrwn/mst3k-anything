@@ -29,9 +29,16 @@ class LLM:
         self.model = model
 
     def chat(self, messages: list[dict], temperature: float = 0.9,
-             max_tokens: int = 2000) -> str:
+             max_tokens: int = 2000, json_mode: bool = False) -> str:
         body = {"model": self.model, "messages": messages,
                 "temperature": temperature, "max_tokens": max_tokens}
+        # Some OpenRouter reasoning models (notably GLM) can spend the entire
+        # output budget in hidden reasoning and return content=null. Keep their
+        # required reasoning pass low and request only the final answer for
+        # structured calls.
+        if json_mode and "openrouter.ai" in self.api_base and self.model.lower().startswith("z-ai/"):
+            body["reasoning_effort"] = "low"
+            body["include_reasoning"] = False
         req = urllib.request.Request(
             f"{self.api_base}/chat/completions",
             data=json.dumps(body).encode(),
@@ -88,6 +95,13 @@ class LLM:
                         parts.append(value)
             if parts:
                 return "".join(parts)
+        # A few OpenAI-compatible gateways put the final answer in a reasoning
+        # field when content is null. Let chat_json attempt to extract JSON from
+        # it; if it is only chain-of-thought, the repair turn below will replace it.
+        for key in ("reasoning", "reasoning_content"):
+            value = message.get(key) if isinstance(message, dict) else None
+            if isinstance(value, str) and value.strip():
+                return value
         raise RuntimeError(f"LLM response from {self.api_base} contained no text content")
 
     def chat_json(self, messages: list[dict], temperature: float = 0.9,
@@ -97,20 +111,36 @@ class LLM:
             s = raw.replace("```json", "```").replace("```", "")
             return json.loads(_extract_json(s))
 
-        raw = self.chat(messages, temperature, max_tokens)
+        def repair_messages():
+            return list(messages) + [{"role": "user", "content":
+                "Your previous JSON response was incomplete, empty, or invalid. Return the "
+                "complete requested JSON only, with no markdown, explanation, or reasoning. "
+                "Keep every string short, use empty arrays when uncertain, and do not "
+                "expand the response just to fill the token limit."}]
+
+        try:
+            raw = self.chat(messages, temperature, max_tokens, json_mode=True)
+        except RuntimeError as first:
+            if "no text content" not in str(first):
+                raise
+            try:
+                raw = self.chat(repair_messages(), min(temperature, 0.4),
+                                max(max_tokens, min(max_tokens * 2, 4000)), json_mode=True)
+            except RuntimeError as second:
+                raise RuntimeError(f"LLM returned no final text after repair: {second}") from first
+            try:
+                return parse(raw)
+            except (json.JSONDecodeError, TypeError) as second:
+                raise RuntimeError(f"LLM returned invalid JSON after empty response: {second}") from first
         try:
             return parse(raw)
         except (json.JSONDecodeError, TypeError) as first:
             # Large structured profiles and dense riff batches can hit the
             # provider's output limit. A second, terse JSON-only turn avoids
             # turning a recoverable formatting/truncation issue into a failed job.
-            repair = list(messages) + [{"role": "user", "content":
-                "Your previous JSON response was incomplete or invalid. Return the "
-                "complete requested JSON only, with no markdown or explanation. "
-                "Keep descriptions compact and do not omit required items."}]
             try:
-                repaired = self.chat(repair, min(temperature, 0.4),
-                                     max(max_tokens, min(max_tokens * 2, 4000)))
+                repaired = self.chat(repair_messages(), min(temperature, 0.4),
+                                     max(max_tokens, min(max_tokens * 2, 4000)), json_mode=True)
                 return parse(repaired)
             except (json.JSONDecodeError, TypeError) as second:
                 tail = str(raw)[-400:]

@@ -32,6 +32,7 @@ DEFAULTS = {
     "margin": 0.15,               # preferred landing margin, not a hard boundary
     "lead_in_sec": 3.0,            # avoid title cards/logos by default
     "short_clip_lead_ratio": 0.1,   # explicit policy for clips shorter than the lead-in
+    "reaction_delay_sec": 0.35,     # natural audience reaction after the anchor beat
     "max_riff_seconds": 9.0,       # preferred spoken length; overtalk may exceed it
     "words_per_second": 2.0,       # Pocket TTS measured rate (~2.0 wps actual)
     "max_tempo_stretch": 1.18,     # modest speed-up; long riffs may overlap dialogue
@@ -51,7 +52,7 @@ DEFAULTS = {
     },
     "window_pool_factor": 1.0,
     "context_radius_sec": 18.0,
-    "writer_batch_size": 8,
+    "writer_batch_size": 6,
     "max_line_chars": 240,
     "moment_win_sec": 1.6,
     "moment_hop_sec": 1.2,

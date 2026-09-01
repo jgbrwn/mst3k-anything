@@ -189,10 +189,14 @@ def cmd_render(args) -> None:
             if isinstance(requested_start, (int, float)) and math.isfinite(requested_start):
                 start = requested_start
             else:
+                reaction = max(0.0, float(job.get("reaction_delay_sec", 0.35)))
+                if r.get("timing", "cue") != "overlap":
+                    when = max(when, reaction)
                 start = anchor + when
             # Only the physical video boundaries are hard. A negative offset
-            # is valid setup overlap; a long line may run over dialogue.
-            start = max(0.0, min(start, max(0.0, duration - dur)))
+            # is valid setup overlap; a long line may run over dialogue. Do not
+            # move a late riff backward merely to preserve its full tail.
+            start = max(0.0, start)
             placed_dur = min(dur, max(0.0, duration - start))
             if placed_dur <= 0.0:
                 print(f"    drop gap{r['gap']}: no video time remains")

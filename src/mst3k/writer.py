@@ -14,7 +14,7 @@ from . import llm
 from .cache import file_signature, value_digest
 
 
-DRAFT_POLICY_VERSION = 3
+DRAFT_POLICY_VERSION = 4
 MECHANISMS = {
     "observation", "literalization", "comparison", "mock_narration",
     "character_address", "production_critique", "sound_button", "escalation",
@@ -50,8 +50,17 @@ PRIORITIES
    because dialogue is present or the preferred cue is short.
 7. VOICE: dry, conversational, alert, slightly incredulous. Prefer precise understatement
    over broad yelling or generic melodrama.
-8. TARGET: punch at the video's choices, construction, logic, props, pacing, editing,
-   claims, or fictional behavior—not real private people or protected classes.
+8. AUDIENCE TIMING: you are a regular watcher, not an omniscient narrator. Use only
+what has already happened by the cue anchor. Never reference a future transcript line,
+post-cue frame, reveal, action, or result. Default to a natural reaction after the beat,
+not a prediction as it begins; use the cue's reaction delay unless a deliberate overlap
+is clearly the joke.
+9. PUNCHINESS: prefer one clean spoken thought with a real turn, usually a compact
+fragment or sentence. Do not inventory visible details or force a reference just to prove
+context. If the funniest response is a dry underreaction, use that.
+10. OFF-THE-CUFF: sound like an immediate audience aside, not a prepared essay. Natural
+contractions, fragments, deadpan irony, and a quick afterthought are welcome. Do not
+mechanically state the evidence; only name a detail when it makes the line funnier.
 
 REJECT
 - Generic filler that could fit any video: "here we go", "look at this", "so dramatic",
@@ -118,16 +127,16 @@ def _bundle_to_user(bundle: dict) -> list[dict]:
         parts.append({"type": "image_url", "image_url":
                       {"url": f"data:image/png;base64,{_b64(f)}"}})
     parts.append({"type": "text", "text":
-                  "TRANSCRIPT setup/before:\n" + _fmt_lines(bundle.get("transcript_before", [])) +
-                  "\nTRANSCRIPT at cue:\n" + _fmt_lines(bundle.get("transcript_over", [])) +
-                  "\nTRANSCRIPT payoff/after:\n" + _fmt_lines(bundle.get("transcript_after", []))})
+                  "TRANSCRIPT completed before cue (already heard):\n" +
+                  _fmt_lines(bundle.get("transcript_before", [])) +
+                  "\nDo not use ongoing/future transcript or announce what is about to happen."})
     if bundle.get("hot_moment") is not None:
         parts.append({"type": "text", "text":
                       f"[audio:hot moment near {bundle['hot_moment']:.1f}s]"})
     return parts
 
 
-def _full_transcript(job: dict, bundles: list[dict]) -> str:
+def _full_transcript(job: dict, bundles: list[dict], through: float | None = None) -> str:
     path = job["dir"] / "transcript.json"
     lines = []
     if path.exists():
@@ -140,6 +149,9 @@ def _full_transcript(job: dict, bundles: list[dict]) -> str:
             lines.extend(bundle.get("transcript_before", []))
             lines.extend(bundle.get("transcript_over", []))
             lines.extend(bundle.get("transcript_after", []))
+    if through is not None:
+        lines = [line for line in lines
+                 if float(line.get("end", line.get("start", 0))) <= float(through) + 0.05]
     seen = set()
     out = []
     for line in sorted(lines, key=lambda item: item.get("start", 0)):
@@ -150,7 +162,7 @@ def _full_transcript(job: dict, bundles: list[dict]) -> str:
         out.append(f"{float(line.get('start', 0)):.1f}s  {line.get('text', '')}")
     # Full context matters for callbacks, but keep pathological transcripts from
     # crowding out the actual cue frames in small-context providers.
-    return "\n".join(out)[:60000]
+    return "\n".join(out)[:20000]
 
 
 def _profile_context(profile: dict) -> str:
@@ -163,8 +175,13 @@ def _profile_context(profile: dict) -> str:
 
 def _system_prompt(profile: dict) -> str:
     kind = (profile or {}).get("kind", "other")
-    return (SOLO_PERSONA + "\n\nVIDEO REGISTER\n" + REGISTER.get(kind, REGISTER["other"]) +
-            "\n\nCONTINUITY PROFILE\n" + _profile_context(profile or {}))
+    return (
+        SOLO_PERSONA + "\n\nVIDEO REGISTER\n" + REGISTER.get(kind, REGISTER["other"]) +
+        "\n\nCONTINUITY PROFILE\n" + _profile_context(profile or {}) +
+        "\n\nCONTINUITY NOTE\nThe profile is an analyst's whole-video reference. At each cue, use "
+        "only details whose evidence timestamp has already occurred; never borrow a "
+        "future scene beat or motif as if you can see ahead."
+    )
 
 
 def _output_contract() -> str:
@@ -176,7 +193,7 @@ Do not omit, duplicate, reorder, or invent cue IDs.
     "speaker": "riffer",
     "status": "riff",
     "line": "spoken words only",
-    "when": 0.0,
+    "when": 0.35,
     "timing": "cue",
     "mechanism": "observation",
     "evidence": ["frame:mid", "transcript:setup:0"],
@@ -184,10 +201,14 @@ Do not omit, duplicate, reorder, or invent cue IDs.
   }
 ]
 
-`status` is `riff` or `silence`; use silence only for a genuinely unusable cue.
-`when` is signed seconds relative to the cue anchor. Negative values are intentional
-overtalk/setup and require `timing: "overlap"`. Positive values can land a button after
-the setup. `timing` is `cue`, `button`, or `overlap`. `mechanism` is one of:
+`status` is normally `riff`; the normal dense pass should not return silence or an empty
+line. A line is required for every offered cue unless the evidence is genuinely unusable
+and a recovery attempt also fails.
+`when` is signed seconds relative to the cue anchor. For ordinary reactions use a
+nonnegative value, normally at least the configured reaction delay (about 0.35s).
+Negative values are exceptional intentional overtalk/setup and require `timing:
+"overlap"`; they may only comment on something already visible or heard, never predict
+the future. Positive values can land a button after the setup. `timing` is `cue`, `button`, or `overlap`. `mechanism` is one of:
 observation, literalization, comparison, mock_narration, character_address,
 production_critique, sound_button, escalation, wordplay, anti_joke, callback.
 `evidence` must cite one or two supplied frame/transcript/profile references.
@@ -225,8 +246,9 @@ def _normalize_response(response, gaps: list[dict], bundles: list[dict], job: di
         seen.add(gid)
         line = " ".join(str(item.get("line") or "").split()).strip()
         status = str(item.get("status") or ("riff" if line else "silence")).lower()
-        if status == "silence" or not line:
+        if not line:
             continue
+        status = "riff"
         if "```" in line or len(line) > int(job.get("max_line_chars", 240)):
             continue
         timing = str(item.get("timing") or ("overlap" if _finite_when(item.get("when")) < 0 else "cue"))
@@ -258,6 +280,16 @@ def _normalize_response(response, gaps: list[dict], bundles: list[dict], job: di
     return sorted(out, key=lambda item: item["gap"])
 
 
+def _safe_chat_json(job: dict, system: str, user, *, temperature: float,
+                    max_tokens: int, role: str = "write"):
+    try:
+        return llm.chat_json(job, system, user, temperature=temperature,
+                             max_tokens=max_tokens, role=role)
+    except Exception as exc:
+        print(f"    [writer] structured response unavailable ({exc}); keeping usable results", flush=True)
+        return []
+
+
 def _batch(items: list, size: int):
     for start in range(0, len(items), size):
         yield items[start:start + size]
@@ -271,6 +303,7 @@ def _draft_policy(job: dict, gaps: list[dict], profile: dict) -> dict:
                  for g in gaps],
         "profile": value_digest(profile or {}),
         "transcript": file_signature(job["dir"] / "transcript.json"),
+        "reaction_delay_sec": float(job.get("reaction_delay_sec", 0.35)),
     }
 
 
@@ -280,8 +313,11 @@ def _draft_cache_valid(cache: Path, marker: Path, policy: dict) -> bool:
     try:
         cached_policy = json.loads(marker.read_text())
         data = json.loads(cache.read_text())
-        return cached_policy == policy and isinstance(data, list)
-    except (OSError, json.JSONDecodeError, AttributeError):
+        actual = {int(item["gap"]) for item in data if isinstance(item, dict) and "gap" in item}
+        expected = {int(gap["id"]) for gap in policy.get("gaps", [])}
+        return (cached_policy == policy and isinstance(data, list) and
+                actual == expected)
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError, ValueError, KeyError):
         return False
 
 
@@ -298,18 +334,16 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
     selected = [g for g in gaps if only_gap is None or int(g["id"]) == int(only_gap)]
     bundle_by_gap = {int(b["gap"]["id"]): b for b in bundles or []}
     system = _system_prompt(profile or {})
-    common = (
-        "\n\nWHOLE-VIDEO TRANSCRIPT FOR CALLBACKS\n" + (_full_transcript(job, bundles or []) or "(none)") +
-        "\n\nOUTPUT CONTRACT\n" + _output_contract()
-    )
+    common = "\n\nOUTPUT CONTRACT\n" + _output_contract()
     previous = []
     all_out = []
-    batch_size = max(1, int(job.get("writer_batch_size", 8)))
+    batch_size = max(1, int(job.get("writer_batch_size", 6)))
     for batch in _batch(selected, 1 if critique_context else batch_size):
         summary = "\n".join(
             f"CUE {g['id']} anchor {g.get('anchor', g['start']):.1f}s; "
             f"preferred {g['start']:.1f}-{g['end']:.1f}s; source {g.get('kind', 'cue')}; "
-            f"preferred words {g.get('budget_words', 8)}"
+            f"preferred words {g.get('budget_words', 8)}; "
+            f"reaction delay {float(job.get('reaction_delay_sec', 0.35)):.2f}s"
             for g in batch
         )
         prompt_text = (
@@ -327,6 +361,12 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
         user.append({"type": "text", "text": common})
         for gap in batch:
             bundle = bundle_by_gap.get(int(gap["id"]))
+            anchor = float(gap.get("anchor", gap.get("start", 0)))
+            available = _full_transcript(job, bundles or [], through=anchor)
+            user.append({"type": "text", "text":
+                         f"AVAILABLE TRANSCRIPT THROUGH CUE {gap['id']} "
+                         f"({anchor:.1f}s; future lines are unknown):\n"
+                         f"{available or '(none)'}"})
             if bundle:
                 user.extend(_bundle_to_user(bundle))
             else:
@@ -336,26 +376,34 @@ def _write_drafts(job: dict, gaps: list[dict], profile: dict,
                 if frame.exists():
                     user.append({"type": "image_url", "image_url":
                                  {"url": f"data:image/png;base64,{_b64(frame)}"}})
-        response = llm.chat_json(job, system, user, temperature=0.85,
-                                 max_tokens=max(1200, len(batch) * 260))
+        response = _safe_chat_json(job, system, user, temperature=0.85,
+                                   max_tokens=max(1200, len(batch) * 260))
         normalized = _normalize_response(response, batch, bundles or [], job)
         # A second constrained call recovers omitted cues without weakening the
         # main prompt or inventing filler in the successful results.
         missing = [g for g in batch if int(g["id"]) not in {r["gap"] for r in normalized}]
         if missing:
+            print("    [writer] retrying omitted cues: " +
+                  ", ".join(str(g["id"]) for g in missing), flush=True)
             repair_user = [{"type": "text", "text":
                              (("DIRECTOR'S NOTE\n" + critique_context + "\n") if critique_context else "") +
                              "The prior answer omitted these cue IDs: " +
                              ", ".join(str(g["id"]) for g in missing) +
-                             ". Return exactly one riff object for each omitted ID. "
-                             "Use silence only if evidence is genuinely unusable.\n" + common}]
+                             ". Return exactly one nonempty, grounded riff object for each omitted ID. "
+                             "Do not return silence, an empty line, analysis, or explanation.\n" + common}]
             for gap in missing:
                 bundle = bundle_by_gap.get(int(gap["id"]))
                 if bundle:
                     repair_user.extend(_bundle_to_user(bundle))
-            repaired = llm.chat_json(job, system, repair_user, temperature=0.75,
-                                     max_tokens=max(700, len(missing) * 220))
-            normalized.extend(_normalize_response(repaired, missing, bundles or [], job))
+            repaired = _safe_chat_json(job, system, repair_user, temperature=0.75,
+                                       max_tokens=max(700, len(missing) * 220))
+            repaired_items = _normalize_response(repaired, missing, bundles or [], job)
+            normalized.extend(repaired_items)
+            still_missing = [g["id"] for g in missing
+                             if g["id"] not in {item["gap"] for item in repaired_items}]
+            if still_missing:
+                print("    [writer] no structured riff for cues: " +
+                      ", ".join(map(str, still_missing)), flush=True)
             normalized.sort(key=lambda item: item["gap"])
         for item in normalized:
             previous.append(f"cue {item['gap']}: {item['line']}")
@@ -440,10 +488,8 @@ def _critique_for(riff: dict, verdict: dict, bundles: list,
         f"Previous draft: {riff['line']}\n"
         f"Director's note: {verdict.get('critique', '')}\n"
         f"Setup: {_fmt_lines(b.get('transcript_before', []))}\n"
-        f"At cue: {_fmt_lines(b.get('transcript_over', []))}\n"
-        f"Payoff: {_fmt_lines(b.get('transcript_after', []))}\n"
-        "Keep the strongest concrete detail, add an actual comic turn, and preserve a "
-        "deliberate overlap timing when that is the better landing.")
+        "Do not use future information. Keep the strongest concrete detail, add an actual "
+        "comic turn, and preserve a deliberate overlap timing when that is the better landing.")
 
 
 def budget_for(gaps: list[dict], gid) -> int:

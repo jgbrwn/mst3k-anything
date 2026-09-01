@@ -439,6 +439,15 @@ def _astats(seg: Path):
     return None
 
 
+def hot_moments(job: dict, audio: Path, k: int = 8) -> list[float]:
+    """Return high-arousal timestamps from the shared audio-window cache."""
+    if not job.get("meta", {}).get("has_audio", True) or not audio.exists():
+        return []
+    windows = _audio_windows(job, audio)
+    return sorted(round((window["start"] + window["end"]) / 2, 1)
+                   for window in sorted(windows, key=lambda w: -w.get("hot_score", 0))[:k])
+
+
 def find_cuts(job: dict, max_cuts: int = 400) -> list[float]:
     """Scene-change timestamps, cached against the source fingerprint."""
     cache = job["dir"] / "cuts.json"
@@ -457,9 +466,9 @@ def find_cuts(job: dict, max_cuts: int = 400) -> list[float]:
                           capture_output=True, text=True)
     cuts = []
     for line in proc.stderr.splitlines():
-        m = re.search(r"pts_time:([\d.]+)", line)
-        if m:
-            cuts.append(round(float(m.group(1)), 3))
+        match = re.search(r"pts_time:([\d.]+)", line)
+        if match:
+            cuts.append(round(float(match.group(1)), 3))
             if len(cuts) >= max_cuts:
                 break
     cache.write_text(json.dumps(cuts))
