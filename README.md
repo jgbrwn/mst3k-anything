@@ -25,9 +25,9 @@ versus the riffed pass.
 - **Silence-true placement** — riffs only go where ffmpeg actually detects quiet audio
   or where a paired silence listener says there's a window. No more riffs stepped on
   by dialogue.
-- **Two-voice ensemble** — Alba (70%) + Jane (30%) by default, routed deterministically
-  by the line so re-rendered versions sound consistent. Expressiveness hints in the
-  written line (`*word*`, trailing `...`, `!`, `?`) become audio coloration.
+- **CPU-safe long-form ASR** — Parakeet processes audio in bounded 60-second worker
+  chunks with per-chunk cache files, so long videos do not feed one unbounded offline
+  decode stream and exhaust host memory.
 - **Real-time log** — after submitting a URL the UI immediately shows a console
   tailing the pipeline stage-by-stage. It follows the newest output, briefly allows
   manual scrolling, then returns to the live tail; failed-job logs remain visible.

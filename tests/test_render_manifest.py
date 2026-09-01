@@ -1,10 +1,11 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mst3k import analyze, writer
+from mst3k import analyze, transcribe, writer
 from mst3k.cli import write_rendered_manifest
 
 
@@ -42,7 +43,12 @@ class RenderManifestTests(unittest.TestCase):
             self.assertFalse((Path(tmp) / "riffs.json").exists())
             self.assertEqual(json.loads((Path(tmp) / "judged_riffs.json").read_text())[0]["line"], "final")
 
-    def test_short_audio_has_no_negative_moment_window(self):
+    def test_asr_oom_error_is_actionable(self):
+        exc = subprocess.CalledProcessError(-9, ["asr"])
+        message = str(transcribe._chunk_error(exc, 3, 14))
+        self.assertIn("chunk 3/14", message)
+        self.assertIn("likely ran out of memory", message)
+
         job = {"meta": {"duration": 1.0}, "moment_win_sec": 1.6,
                "moment_hop_sec": 1.2, "lead_in_sec": 3.0}
         self.assertEqual(analyze._detect_quiet_moments(Path("/does/not/exist"), job), [])

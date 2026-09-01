@@ -5,52 +5,145 @@ Runs in the asr-venv (has sherpa-onnx + numpy). Emits transcript.json:
 """
 import json
 from pathlib import Path
+import signal
 import subprocess
-import sys
+import wave
 
 ASR_VENV = Path(__file__).resolve().parents[2] / "asr-venv"
 MODEL_DIR = Path(__file__).resolve().parents[2] / "models" / "parakeet-ctc"
+ASR_CHUNK_SECONDS = 60
 
 _RUNNER = r'''
-import sherpa_onnx, wave, numpy as np, json, sys
-audio, out = sys.argv[1], sys.argv[2]
+import json, os, sys, wave
+import sherpa_onnx
+import numpy as np
+
+audio, out, start_sec, end_sec = sys.argv[1:5]
+start_sec, end_sec = float(start_sec), float(end_sec)
+with wave.open(audio, "rb") as wf:
+    sample_rate = wf.getframerate()
+    if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
+        raise RuntimeError("ASR audio must be mono 16-bit PCM")
+    start_frame = max(0, int(round(start_sec * sample_rate)))
+    end_frame = min(wf.getnframes(), int(round(end_sec * sample_rate)))
+    wf.setpos(start_frame)
+    samples = np.frombuffer(wf.readframes(max(0, end_frame - start_frame)),
+                            dtype=np.int16).astype(np.float32) / 32768.0
+
 rec = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
     model="MODEL/model.int8.onnx", tokens="MODEL/tokens.txt",
-    num_threads=2, sample_rate=16000, feature_dim=80,
+    num_threads=2, sample_rate=sample_rate, feature_dim=80,
     decoding_method="greedy_search", debug=False)
-wf = wave.open(audio, "rb")
-samples = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
 s = rec.create_stream()
-s.accept_waveform(16000, samples)
+s.accept_waveform(sample_rate, samples)
 rec.decode_stream(s)
 r = s.result
 tokens = list(getattr(r, "tokens", []))
-json.dump({"text": r.text,
+payload = {"text": r.text,
            "tokens": tokens,
            "words": tokens,           # parity: CTC tokens are subword pieces
-           "timestamps": list(getattr(r, "timestamps", []))},
-          open(out, "w"))
+           "timestamps": list(getattr(r, "timestamps", []))}
+tmp = out + ".tmp"
+with open(tmp, "w") as fp:
+    json.dump(payload, fp)
+os.replace(tmp, out)
 '''
 
 
+def _write_json(path: Path, data: dict) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(path)
+
+
+def _chunk_error(exc: subprocess.CalledProcessError, index: int, total: int) -> RuntimeError:
+    if exc.returncode < 0:
+        try:
+            signal_name = signal.Signals(-exc.returncode).name
+        except ValueError:
+            signal_name = f"signal {-exc.returncode}"
+        if exc.returncode == -signal.SIGKILL:
+            reason = "SIGKILL (the ASR worker likely ran out of memory)"
+        else:
+            reason = signal_name
+    else:
+        reason = f"exit code {exc.returncode}"
+    return RuntimeError(f"ASR chunk {index}/{total} failed with {reason}")
+
+
 def transcribe(job: dict) -> dict:
-    """Return {"lines": [...], "text": "..."} with word timestamps."""
+    """Return {"lines": [...], "text": ...} with word timestamps.
+
+    Parakeet's offline decoder retains substantially more state when fed a long
+    recording at once. Process bounded 60-second chunks in separate workers so
+    a long submission cannot grow one decoder to host-OOM size. Chunk results
+    are cached individually, making a retry resume after an interrupted chunk.
+    """
     cache = job["dir"] / "transcript.json"
     if cache.exists():
         return json.loads(cache.read_text())
     from . import analyze
     audio = analyze.extract_audio(job)
-    tmp = job["dir"] / "transcript_raw.json"
     script = _RUNNER.replace("MODEL", str(MODEL_DIR))
     runner = job["dir"] / "_asr_run.py"
     runner.write_text(script)
-    subprocess.run([str(ASR_VENV / "bin" / "python"), str(runner),
-                    str(audio), str(tmp)], check=True)
-    raw = json.loads(tmp.read_text())
-    lines = _group_lines(raw.get("words", []), raw.get("timestamps", []))
-    out = {"text": raw.get("text", ""), "lines": lines,
-           "words": raw.get("words", []), "timestamps": raw.get("timestamps", [])}
-    cache.write_text(json.dumps(out, indent=2))
+
+    with wave.open(str(audio), "rb") as wf:
+        if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
+            raise RuntimeError("ASR audio must be mono 16-bit PCM")
+        sample_rate = wf.getframerate()
+        total_frames = wf.getnframes()
+    if sample_rate <= 0 or total_frames <= 0:
+        out = {"text": "", "lines": [], "words": [], "timestamps": []}
+        _write_json(cache, out)
+        return out
+    duration = total_frames / sample_rate
+    chunk_seconds = ASR_CHUNK_SECONDS
+    total = max(1, (total_frames + int(sample_rate * chunk_seconds) - 1)
+                // int(sample_rate * chunk_seconds))
+    chunk_dir = job["dir"] / "asr_chunks"
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    all_tokens, all_timestamps, texts = [], [], []
+    for index in range(total):
+        start = index * chunk_seconds
+        end = min(duration, start + chunk_seconds)
+        raw_path = chunk_dir / f"{index:05d}.json"
+        if raw_path.exists():
+            try:
+                raw = json.loads(raw_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                raw_path.unlink(missing_ok=True)
+                raw = None
+        else:
+            raw = None
+        if raw is None:
+            print(f"    [transcribe] chunk {index + 1}/{total} "
+                  f"({start:.0f}-{end:.0f}s)", flush=True)
+            try:
+                subprocess.run([
+                    str(ASR_VENV / "bin" / "python"), str(runner),
+                    str(audio), str(raw_path), str(start), str(end)],
+                    check=True)
+            except subprocess.CalledProcessError as exc:
+                raise _chunk_error(exc, index + 1, total) from exc
+            try:
+                raw = json.loads(raw_path.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"ASR chunk {index + 1}/{total} produced invalid output") from exc
+        tokens = list(raw.get("tokens") or raw.get("words") or [])
+        timestamps = list(raw.get("timestamps") or [])
+        all_tokens.extend(tokens)
+        all_timestamps.extend(float(t) + start for t in timestamps[:len(tokens)])
+        if raw.get("text"):
+            texts.append(raw["text"])
+
+    raw = {"text": " ".join(texts), "tokens": all_tokens,
+           "words": all_tokens, "timestamps": all_timestamps}
+    _write_json(job["dir"] / "transcript_raw.json", raw)
+    lines = _group_lines(raw["words"], raw["timestamps"])
+    out = {"text": raw["text"], "lines": lines,
+           "words": raw["words"], "timestamps": raw["timestamps"]}
+    _write_json(cache, out)
     return out
 
 

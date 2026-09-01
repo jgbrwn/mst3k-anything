@@ -67,8 +67,9 @@ This is what makes the comedy land in the right places without hallucinated timi
 ### Stage 2 — Decompose (all deterministic, cached)
 - **Silence gaps**: `ffmpeg silencedetect` (noise floor −35 dB, min gap ~1.2–2 s).
   Each gap → `{start, dur, word_budget = (dur − 2*margin) * 2.6 words/s}`.
-- **Transcript**: prefer downloaded subs; else faster-whisper (small/medium, CPU is fine
-  for an MVP; GPU optional later).
+- **Transcript**: prefer downloaded subs; else Parakeet CTC (INT8, CPU-only) in bounded
+  60-second subprocess chunks. Each chunk is cached independently so long recordings
+  cannot grow one offline decoder until the host runs out of memory.
 - **Frames**: one frame per gap (mid-gap) + a few context frames; downscaled to ~512px
   for vision calls. Optional: PySceneDetect to prefer shot-stable frames.
 - **Hot moments** (v2): audio-energy spikes (crashes, stings, crowd laughs) and
