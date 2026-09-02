@@ -75,7 +75,9 @@ def openrouter_models(ttl_sec: int = 3600, min_context: int = 128_000,
             return json.loads(_CACHE.read_text())
         except Exception:
             pass
-    key = _read("/tmp/openrouter_api_key")
+    key = load_providers().get("openrouter", {}).get("key") or _read("/tmp/openrouter_api_key")
+    if not key:
+        raise RuntimeError("OpenRouter API key is not configured")
     req = urllib.request.Request("https://openrouter.ai/api/v1/models",
                                  headers={"Authorization": f"Bearer {key}"})
     with urllib.request.urlopen(req, timeout=30) as resp:

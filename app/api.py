@@ -651,10 +651,16 @@ def artifact(jid: int, kind: str):
     con = db(); row = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone(); con.close()
     if not row or row["status"] != "done":
         raise HTTPException(404, "not ready")
-    col = {"video": row["video"], "srt": row["srt"]}.get(kind)
+    if kind == "source":
+        source = _job_work_dir(row) / "source.mp4"
+        if not source.exists() and row["video"]:
+            source = Path(row["video"]).parent / "source.mp4"
+        col = source
+    else:
+        col = {"video": row["video"], "srt": row["srt"]}.get(kind)
     if not col or not Path(col).exists():
         raise HTTPException(404, "missing artifact")
-    mt = "video/mp4" if kind == "video" else "text/plain"
+    mt = "video/mp4" if kind in ("video", "source") else "text/plain"
     return FileResponse(col, media_type=mt,
                         filename=Path(col).name)
 

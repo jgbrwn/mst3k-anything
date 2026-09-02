@@ -1,329 +1,375 @@
-# mst3k-anything — Architecture & Plan
+# mst3k-anything — Architecture & plan
 
-**Goal:** paste a YouTube URL → get back a video with witty, MST3K-style robot heckling,
-perfectly timed to the action, original audio ducked under the riffs, and a theater/
-robot-silhouette overlay along the bottom. All powered by an LLM workflow backed by an
-OpenAI-compliant API.
+**Status snapshot: September 2, 2026.** This document describes the behavior that is
+implemented today and separates it from the remaining roadmap. It is intentionally more
+literal than the original prototype plan: the README and this file should describe the
+same product.
 
----
+## 1. Goal and current status
 
-## 1. Executive summary
+Paste a video URL or local video path and receive a finished video with original,
+dry theater-commentator riffs, measured PocketTTS speech, ducked source audio, and a
+procedural theater strip. Riffs are dense and context-specific, but intentional
+dialogue overlap is allowed. Timing windows guide a landing; they do not veto a good
+line merely because a source video is talking.
 
-This is buildable, and every risky stage was already **proven end-to-end in this session**
-on a 2-core CPU box (see `demo/`):
+The current implementation is a CPU-first Python pipeline wrapped by a small FastAPI
+service. It is not an MST3K character or voice impersonator: the personas, lines,
+voices, and procedural silhouettes are original.
 
-| Stage | Proven with | Result |
+### Current milestone status
+
+| Area | Status | Notes |
 |---|---|---|
-| YouTube ingest | yt-dlp 2026.08.19 (`uv tool install`) | 3 min of Plan 9 from Outer Space, 360p mp4 |
-| Riff cue detection | ffmpeg + deterministic audio/cut scoring | dense cadence baseline plus silence/visual/audio signals |
-| Visual understanding + joke writing | qwen3.8-flash (vision) via Hyper chat-completions API | 3 frame-specific riffs, correct JSON, $0.002 |
-| TTS (free, CPU, no GPU) | Pocket TTS (Kyutai) | 3.3s of speech in ~6s on 2 cores; voice cloning available |
-| Timing and mix | measured TTS duration + sidechain ducking | preferred landing windows; deliberate dialogue overlap is allowed |
-| Voice differentiation | Pocket TTS + ffmpeg pitch shift | 3 distinct characters from pitch-coloring (movie-sign recipe) |
-| Audio duck & mix | ffmpeg `volume=between()` + `adelay` + gain | silence window went −45 dB → −18 dB exactly during the riff |
-| Theater overlay | stdlib-generated RGBA silhouette PNG | bottom-band brightness 76 → 35, composited for full duration |
+| M0 proof of concept | ✅ complete | End-to-end media, TTS, mix, and overlay were proven first in `demo/`. |
+| M1 CLI pipeline | ✅ complete | `python -m mst3k.cli render` runs the staged pipeline with private artifacts. |
+| M2 style framework | ⏳ future | No external-riff distillation job or checked-in `STYLE_GUIDE.md` yet. |
+| M3 service/UI | ✅ mostly complete | FastAPI, SQLite state, one worker, SSE logs, history, player, editor, and rerender. |
+| M4 comedy loop | ✅ partial | Dense cueing, profile, callbacks, judge/rewrite, causal local evidence, sidechain mix, and overlay exist. |
+| M5 operations | 🔧 in progress | systemd deployment works on this VM; auth, rate limits, packaging, and scaling remain. |
 
-The pipeline is: **deterministic media stages (ffmpeg/yt-dlp/TTS) wrapped around two
-agentic LLM stages (understand, write)**. That split drives the whole architecture.
+### Current example
 
----
+`docs/examples/deadwood-relentless/` contains the latest completed Deadwood run as of
+September 2, 2026: OpenRouter `openai/gpt-5.6-luna`, Relentless density (bias `4`),
+27 planned cues, 27 rendered riffs, and 8 judge rewrites. The source is about 4:50 at
+1280×720. The directory includes the MP4, SRT, final rendered manifest, and a poster.
 
-## 2. Architecture overview
+## 2. Architecture
 
+```text
+┌─────────────── static HTML/CSS/JS frontend ────────────────┐
+│ submit · providers · density · SSE log · player · editor   │
+└───────────────────────┬────────────────────────────────────┘
+                        │ REST + Server-Sent Events
+┌───────────────────────▼────────────────────────────────────┐
+│ FastAPI service · SQLite durable job state                 │
+│ in-memory queue.Queue · one worker · isolated child process │
+└───────────────────────┬────────────────────────────────────┘
+                        │ python -m mst3k.cli render
+┌───────────────────────▼────────────────────────────────────┐
+│ per-job work directory and resumable filesystem artifacts  │
+│ ingest → ASR → profile → cues → context → write/judge     │
+│        → PocketTTS/place → ffmpeg mix/deliver             │
+└────────────────────────────────────────────────────────────┘
 ```
-┌────────────────────────── FRONTEND (web app) ──────────────────────────┐
-│ submit URL · pick options · live job progress · preview player · download │
-└───────────────┬───────────────────────────────────────▲────────────────┘
-                │ REST/WS submit                        │ status + result
-┌───────────────▼────────────── BACKEND ────────────────┴────────────────┐
-│ FastAPI + job queue (SQLite-backed) · resumable stage cache            │
-├────────────────────────────── PIPELINE ────────────────────────────────┤
-│ 1 INGEST      yt-dlp download (+subs if any) → mp4                     │
-│ 2 TRANSCRIBE  chunked Parakeet ASR → timestamped transcript            │
-│ 3 UNDERSTAND  *LLM AGENT*: metadata + frames + transcript → ledger     │
-│ 4 CUE PLAN    cadence + audio + cuts + pauses → dense scored cues      │
-│ 5 WRITE       *LLM AGENT*: contextual draft → judge/rewrite             │
-│ 6 PLACE       TTS measurement → preferred landing or deliberate overlap │
-│ 7 MIX/DELIVER duck + mix → final mp4, SRT, rendered riffs.json         │
-└────────────────────────────────────────────────────────────────────────┘
+
+SQLite stores job status, provider/model labels, output paths, process identity, and
+errors. Dispatch is currently an in-memory single-worker queue, not a distributed or
+SQLite-native scheduler. Each API row receives a private `jobs/job-<id>-<slug>/`
+work directory so repeated submissions cannot collide. The CLI can also use a URL-slug
+workspace when run without the API.
+
+The actual stage order is:
+
+1. **Ingest** — normalize the input to `source.mp4` and write metadata.
+2. **Transcribe** — chunked CPU Parakeet ASR, or an empty transcript for video-only input.
+3. **Initial frames** — ten evenly sampled context frames for understanding.
+4. **Understand** — profile content kind, premise, targets, motifs, and scene beats.
+5. **Cue plan** — deterministic cadence plus audio/cut/quiet/silence candidates.
+6. **Cue context** — cue frames, transcript context, and hot-moment markers.
+7. **Write + judge** — batched drafts, omitted-cue repair, verdicts, and rewrites.
+8. **Synthesize + place** — PocketTTS duration measurement and millisecond placement.
+9. **Mix + deliver** — duck, overlay, encode, SRT, and final rendered manifest.
+
+## 3. Implemented pipeline
+
+### 3.1 Ingest
+
+`src/mst3k/ingest.py` accepts:
+
+- local paths and `file:` paths;
+- YouTube URLs;
+- archive.org item/direct URLs;
+- direct URLs whose path has a recognized video extension; and
+- other URLs through a yt-dlp generic-extractor attempt followed by a direct-download
+  fallback.
+
+yt-dlp requests video up to 720p, writes metadata, and asks for English subtitles.
+Subtitles are retained in the job when found but are **not currently used** as the
+transcript source; Parakeet remains authoritative. Inputs are validated with ffprobe,
+limited to 2.5 hours, and normalized to `source.mp4`. A missing audio track is supported:
+the job receives an empty transcript and the mix supplies an `anullsrc` riff bed.
+
+### 3.2 Transcription
+
+Parakeet CTC 110M INT8 runs through sherpa-onnx in a separate `asr-venv`, CPU-only,
+with bounded 60-second subprocess chunks. Chunk JSON is cached independently, so an
+interrupted long job can resume without decoding the entire recording again. The
+published artifact is `transcript.json` with timestamped lines, tokens, and timestamps;
+`transcript_raw.json` is retained for diagnostics.
+
+### 3.3 Understanding and visual context
+
+The initial frame pass stores ten evenly spaced `ctxNN.png` frames. The understanding
+call receives those frames, metadata, and up to 24,000 characters of timestamped
+transcript, and returns a compact content profile:
+
+```text
+kind · tone · premise · characters · targets · running_gags · visual_motifs
+scene_beats · do_not_target · style_guide
 ```
 
-**Key design principle:** the LLM never touches media bytes. It consumes manifests
-(gaps, timecodes, frames, transcripts) and emits structured JSON (riffs with speaker +
-line). All timing-critical work happens in deterministic code that *measures* results.
-This is what makes the comedy land in the right places without hallucinated timing.
+The profile call is bounded and JSON-repaired. If the provider fails, the job continues
+with an evidence-only profile and a title-based fallback kind such as `vlog` or `movie`.
+The profile is a whole-video continuity aid, not permission to predict. Its future scene
+beats and motifs are still visible to the writer as analyst metadata; prompts tell the
+writer to use a detail only once its evidence timestamp has occurred. A future hardening
+item is to project the profile itself causally per cue rather than relying on that rule.
 
----
+After cue selection, each cue gets an anchor frame and a separate context bundle with
+only `pre` (anchor −2.5s) and `mid` (anchor) frames. The writer and judge receive
+transcript completed through the cue, plus local overlapping setup where appropriate;
+post-cue transcript and future frames are retained only for internal diagnostics and
+are not supplied as writing evidence.
 
-## 3. Pipeline stages in detail
+### 3.4 Dense cue planning
 
-### Stage 1 — Ingest
-- `yt-dlp` (installed via `uv tool install yt-dlp`, kept fresh; YouTube breaks old versions).
-- Grab best ≤720p mp4 for speed; also pull **auto-captions/subs** when present
-  (YouTube auto-caps with timestamps beat transcription for dialogue context).
-- Metadata: title, duration, uploader → feeds the "understand" stage.
+`analyze.find_gaps()` always creates a cadence baseline. It then ranks possible
+replacements from:
 
-### Stage 2 — Decompose (all deterministic, cached)
-- **Transcript**: Parakeet CTC (INT8, CPU-only) runs in bounded 60-second subprocess
-  chunks, cached independently for long-form reliability.
-- **Frames**: one anchor frame plus pre/mid/post context frames; downscaled for vision.
+- detected pauses/silence;
+- quiet and RMS windows;
+- hot audio windows; and
+- scene cuts.
 
-### Stage 3 — Understand (LLM agent)
-- One vision/text call (or a few chunked calls for long videos): sampled frames plus the
-  timestamped transcript → `{premise, characters, tone, running_gags, visual_motifs,
-  targets, scene_beats}`. This becomes shared continuity context for the writers' room.
-- For feature-length input, chunk by ~10-minute windows with overlap and merge.
+A per-cue visual-interest/luma score is recorded from the cue frames after the plan is
+selected for downstream placement/debugging; it is not currently a hard cue-selection
+gate. Silence and quietness are signals, not eligibility gates. A small spacing rule only
+deduplicates near-identical anchors. The UI exposes five levels: **Sparse**, **Light**,
+**Lively**, **Dense**, and **Relentless**. The current multipliers are approximately
+`0.55`, `0.78`, `1.0`, `1.4`, and `1.8` against the content-kind baseline, with an
+emergency ceiling of 400 riffs. `TARGET_RIFF_COUNT`, when supplied by code, acts as a
+cap rather than a promise that post-processing will drop lines to fit.
 
-### Stage 4 — Cue plan (dense, scored opportunities)
-The baseline count comes from the video's content kind plus the density knob. Cadence cues
-keep continuous-dialogue, music, and fast-cut material alive; pauses, quietness, scene cuts,
-and hot audio moments improve the anchor but are never required. The planner keeps a small
-minimum spacing only to deduplicate near-identical cues, not to forbid adjacent comic beats.
+### 3.5 Writing and judging
 
-### Stage 5 — Write (LLM agent, the heart of the app)
-Batched writer calls (batches of ~6–10 cues). Each request carries:
-- The evidence-first theater-commentator prompt and a content-kind register.
-- The timestamped whole-video transcript, continuity profile, running-gag/motif ledger,
-  and local pre/mid/post frames for each cue.
-- A preferred word count and landing window, but no hard silence or duration veto.
-- Output: strict JSON with one grounded riff object per offered cue, including timing
-  intent, comic mechanism, evidence references, and optional callback target.
-- A judge sees the complete draft ledger and rewrites salvageable weak jokes before mix.
+The writer is an original dry theater commentator. Its prompt emphasizes:
 
-### Stage 6 — Place (timing is a preference, not a veto)
-- TTS each line and measure actual duration with ffprobe.
-- Apply only a modest speed-up when it improves a button. If the line is longer than
-  its preferred cue, place it anyway over the source dialogue; reject only failed TTS
-  or an impossible video-boundary placement.
-- The writer's signed timing hint can place a setup before the anchor or a button after it.
-- Cache rendered lines keyed by (text, voice) — editor rerenders only re-speak changed lines.
+- concrete visual/spoken/editing evidence;
+- a real comic turn rather than description;
+- compact fragments, contractions, underreaction, irony, and varied mechanisms;
+- callbacks only to details already established; and
+- natural audience timing, including explicitly marked setup overlap.
 
-### Stage 7 — Mix and deliver
-- Final mp4 (copy video stream when possible, AAC audio), `riffs.srt` for reading along,
-  and `riffs.json` containing only the riffs that actually made it into that video.
-  Drafts and judge output are kept separately for debugging; editor submissions are
-  persisted as a private request manifest and bypass another writer pass.
+Normal writer batches contain six cues. Structured output is normalized manually: cue
+IDs must be known and unique, lines must be nonempty and bounded, mechanisms/timing are
+validated, and evidence is limited to supplied references. If a provider omits cues,
+the missing IDs receive a constrained recovery call. Results are cached per job with a
+policy marker and retained as `drafts.json`.
 
----
+The judge runs in the same six-item batches unless a job overrides that setting. It
+scores groundedness, comic turn, voice, and timing; rewrites salvageable weak lines one
+at a time; and drops only when no grounded joke remains. `judged_riffs.json` is a
+work/debug artifact. The public `riffs.json` is written only after synthesis and
+contains only placements that actually reached the mixer.
 
-## 4. The LLM layer (models & API)
+### 3.6 PocketTTS and placement
 
-- Provider: any **OpenAI-compliant chat-completions endpoint** — proven against
-  `https://hyper.charm.land/v1/chat/completions` with model `qwen3.8-flash`.
-  Provider/base-URL/model all config-driven.
-- Per-stage model assignment (config):
-  | Stage | Default | Why |
-  |---|---|---|
-  | Understand | qwen3.8-flash (vision) | cheap, huge context, sees frames |
-  | Write | qwen3.8-flash | batch cost pennies per movie; fast |
-  | Punch-up (optional) | stronger model | only for top ~20% of gaps |
-  | QA judge | same or separately selected model | rewrite weak lines; drop only when no grounded joke remains |
-- All responses are schema-validated (pydantic); failures retry with the error appended.
-- Prompt cache: STYLE_GUIDE + personas are identical across a job → cache-hit pricing
-  ($0.02/M on Hyper) makes long movies even cheaper.
+PocketTTS generates local speech. The default pool is two built-in voices (`alba` and
+`jane`) with deterministic per-riff assignment, pitch/rate coloring, and optional
+reference-voice configuration. TTS outputs are measured with ffprobe and cached under
+`tts/` using text, voice, pitch/rate, reference-file, and delivery-hint inputs.
 
----
+The preferred cue envelope and word budget guide delivery but do not reject a good line.
+A modest tempo stretch may help a button; a longer riff is intentionally allowed to run
+over source dialogue. Ordinary reactions use a default 0.35-second delay after the
+anchor. Negative offsets are reserved for explicitly marked intentional overlap/setup.
+Placement clamps only to the physical video start/end and uses integer-millisecond
+`adelay`; a late line is not moved backward merely to preserve its full tail.
 
-## 5. MST3K style framework ("watch MST3K, learn the craft")
+### 3.7 Mix and delivery
 
-Yes — ingesting real MST3K material is the right move, but **ingest to distill, not to
-copy**:
+`mix.py` builds an ffmpeg graph with:
 
-1. `yt-dlp` a curated set of official MST3K uploads (the official channel hosts
-   clips/episodes; they're also on some free tiers). Personal-use analysis only.
-2. For each clip: transcribe with timestamps, separate host/riff lines from movie audio
-   (the show's mix makes this tractable: riff lines are clean studio vocal over ducked
-   movie audio), and record **where** each riff lands relative to the movie content
-   (in a silence? as a button right after a line? over a slow scene? during a song?).
-3. Feed transcripts + timings + a few sampled frames to the LLM with an analysis prompt
-   → distill: joke typology (observation, anachronism, character-voice, callback,
-   sung riff, pun, anti-joke), rhythm/density patterns, how setups/payoffs span gaps,
-   what gets riffed (production errors, wooden acting, continuity) and what never does.
-4. Output: **`STYLE_GUIDE.md`** + a bank of ~100 anonymized example riffs with their
-   timing context. The guide becomes the writer's system prompt; examples become
-   few-shot shots matched to gap type.
-5. Re-run the distillation whenever we want to tune the voice ("more musical riffs",
-   "meaner Crow-analog"), versioning each guide.
+- a riff bus mixed from the measured speech files;
+- sidechain compression to duck the source while riffs speak;
+- a limiter for dense sections; and
+- a static procedural RGBA theater strip by default, or an optional short animated
+  WebM overlay.
 
-This gives the workflow the *framework* the idea calls for — durable, editable, and
-detached from any single model.
+Normal renders re-encode the video with libx264 because the overlay/filter graph is
+active; this is not a stream-copy path. The job emits:
 
----
+- final `<title>_riffed.mp4` and `final.mp4`;
+- `<title>_riffs.srt` and `riffs.srt`, representing actual riff audio spans; and
+- `riffs.json`, the final rendered placement manifest.
 
-## 6. Workflow / framework choice (incl. the flue question)
+The WebUI serves both the original `source.mp4` and the final video, so its synchronized
+comparison player is genuinely original-versus-riffed. It also serves MP4/SRT downloads
+and an editable manifest; drafts, judge output, caches, and source media stay in the
+private job directory.
 
-**`withastro/flue` assessment** ("The sandbox agent framework", TypeScript):
-- Real and on-point for *agentic* work: sessions, durable recovery, skills (markdown
-  playbooks), typed tools, sandboxes, subagents, OTel observability. Deploy to Node,
-  Cloudflare Workers, GitHub Actions, etc.
-- Fit: it's a great home for the **creative agent stages** (understand + write), where
-  you want a loop with tools ("get me gap 47's frame", "re-check my budget", "regenerate
-  weak riffs") and durable sessions for long jobs.
-- Friction: TS-first, while our proven media toolchain is Python (yt-dlp, ffmpeg,
-  Pocket TTS, faster-whisper); the repo is young. The agent would shell out to Python/
-  ffmpeg tools inside its sandbox — workable, one extra layer.
+## 4. LLM providers and structured-response policy
 
-**Recommendation (pragmatic):**
-- **MVP (Phase 1–2): pure-Python pipeline** — one package, stage functions, SQLite job
-  table, content-keyed cache at every stage (exactly how the demo scripts already work).
-  Simple, boring, and it ships.
-- **Phase 3 option: adopt flue** as the orchestration layer for the agent stages once
-  we need real autonomy (self-review loops, per-scene subagents, durable retries).
-  Because the LLM layer is just an OpenAI-compliant endpoint and the media stages are
-  CLI tools, swapping the orchestrator later is cheap.
-- Also evaluated and deliberately not used for orchestration: heavyweight workflow
-  engines (Temporal etc. — overkill), LangGraph (fine, but we don't need its graph
-  abstraction for a near-linear pipeline).
+The client speaks OpenAI-compatible `/chat/completions` endpoints. The configured
+providers are:
 
-**Reference implementation to mine:** `davidtkunz/movie-sign` (verified real: 1,563
-lines, clean code). We validated its writers'-room persona, pydantic riff schema,
-word-budget math, and measured-fit mixdown by reading the source. It's Windows-leaning
-(SAPI voices) and outputs a *parallel-play* commentary track rather than a muxed video
-— our app is the Linux-portable, vision-first, video-muxing superset. We can borrow
-structure (and optionally credit it) but we own our pipeline.
+| Provider | Default model | Current role |
+|---|---|---|
+| Hyper | `qwen3.8-flash` | default writer/judge/understanding route |
+| Neuralwatt | `kimi-k3-fast` | selectable writer/judge/understanding route |
+| OpenRouter | explicit `provider/model` | selectable model picker, including multimodal models |
 
----
+Writer and judge can be assigned separately per submission. Understanding currently
+uses the normal resolved writer route; the legacy `LLM_UNDERSTAND_MODEL` setting is not
+a separate active role. There is no implemented separate punch-up stage.
 
-## 7. Frontend / app
+Structured-call recovery is provider/model agnostic:
 
-Keep it lean (it's a utility with one hero output):
-- **Stack**: FastAPI backend + simple React (Vite) frontend. (htmx is fine if we want
-  zero-JS; React if we want a nicer player/progress UX.)
-- **Views**: submit (URL + options: riff density, snark level, voice set, duck depth,
-  overlay on/off) → job page (SSE progress per stage, live riff preview list) →
-  result (player, download mp4/srt, "re-render" after editing riffs.json in-browser).
-- Later: gallery of community riffs (requires rights care, §11), side-by-side
-  before/after player.
+- transient 429/502/503/504 and network failures retry with backoff;
+- text content, structured content blocks, and common reasoning fields are extracted;
+- empty final content gets a compact JSON-only repair turn; and
+- malformed or truncated JSON gets one compact repair turn before the caller decides
+  whether to degrade gracefully.
 
----
+Reasoning controls are different: parameter names are not universal. The client sends
+`reasoning_effort=low` and `include_reasoning=false` automatically only for the known
+OpenRouter `z-ai/*` GLM family. `MST3K_REASONING_EFFORT` is an explicit opt-in for any
+provider/model whose gateway documents those fields; unsupported fields are never sent
+by default.
 
-## 8. Voices & TTS
+### Informal model observation
 
-- **Engine: Pocket TTS** (Kyutai) — CPU-only (~0.5× realtime on our 2-core box, faster
-  on production CPUs), streaming, MIT-ish licensed, free. Runs as library or HTTP
-  service (`pocket-tts serve`).
-- **Characters**: 3 original bots (avoid trademarked names/voices):
-  - Clone 2–3 distinct voices from **public-domain recordings** (Pocket TTS needs ~10 s
-    reference clips; sources: old radio dramas / LibriVox on archive.org) — the user
-    suggested exactly this and it's the right call.
-  - Differentiate further with pitch/coloring (movie-sign recipe): host plain,
-    fast-bot −1.5 semitones, theatric-bot +4 semitones.
-  - `export-voice` to `.safetensors` once per character → instant loads thereafter.
-- Upgrade path (optional, paid): ElevenLabs for "performer-grade" takes; interface
-  already abstracted behind one `speak(line, character) -> wav` function.
-- Never clone the real MST3K cast/characters; keep original personas (§11).
+This is not a controlled benchmark, but across the multimodal models tested so far the
+working impression is:
 
----
+1. **GPT-5.6 Luna** (`openai/gpt-5.6-luna`) — strongest writing and joke landing;
+2. **GLM 5.3 Flash** (`z-ai/glm-5.3-flash`) — second-best overall impression, with
+   extra structured-output handling needed;
+3. **Qwen 3.8 Flash** (`qwen3.8-flash`) and **Kimi-k3-fast** — useful, fast/cheap
+   alternatives but generally weaker comic turns and landings in these runs.
 
-## 9. The timing-precision system (why jokes land "in exactly the right places")
+Job 62 is the current Luna example: 27/27 planned cues rendered and eight judge
+rewrites. These observations can change with prompt/cache state and source material.
+A future fixed-clip A/B benchmark should record human ratings, judge scores, rewrite/drop
+rates, causal-reference errors, latency, and cost before treating the ordering as a
+measurement.
 
-1. Cue opportunities are scored from cadence, scene/visual change, audio energy, quietness,
-   and pauses; silence is not a requirement.
-2. Writer sees exact local evidence plus whole-video transcript and continuity memory.
-3. TTS output is measured for useful timing hints, but overtalk is allowed.
-4. Placement is sample-accurate via `adelay`; only video boundaries are hard.
-5. Sidechain ducking and a limiter preserve speech intelligibility in dense sections.
-6. Judge rewrites weak jokes based on groundedness, comic turn, voice, and intentional timing.
+## 5. Cache and reliability model
 
----
+Caches are primarily **per-job filesystem caches**, not a shared content-addressed store.
+`file_signature()` uses resolved path, size, and modification time; policy markers also
+include relevant versions, cue anchors, source/audio signatures, and selected settings.
+Important artifacts include:
 
-## 10. Cost & performance (measured, not guessed)
+```text
+source.mp4, meta.json
+transcript.json, transcript_raw.json, asr_chunks/
+frames/, frames_policy.json, context_frames_policy.json
+profile.json, profile_policy.json
+gaps.json, gaps_policy.json, audio_windows.json, cuts.json
+bundles.json, drafts.json, drafts_policy.json, judged_riffs.json
+tts/, theater.png or theater_anim.webm
+final.mp4, riffs.srt, riffs.json
+```
 
-- Writing a 3-minute sample: ~3k tokens including images ≈ **$0.002**.
-- Extrapolated feature (90 min, ~250 riffs, batched): **~$0.05–0.30** in LLM calls,
-  dramatically less with prompt caching of the style guide.
-- TTS: **$0** (local CPU). Whisper: $0 local. ffmpeg/yt-dlp: $0.
-- Encoding: ~16× realtime here → a 90-min movie ≈ 6 min encode on this box.
-- Bottleneck is TTS on small CPUs (~30 riffs × ~6 s ≈ 3 min) — parallelize across cores
-  or use `pocket-tts serve` with a worker pool.
+Corrupt JSON, zero-duration TTS, stale source/audio/frame policy, and invalid editor
+manifests are rejected or regenerated. Known limitations remain: profile/draft policy
+markers do not yet fully encode provider/model identity, and editor rerender currently
+clears render-dependent TTS/segment directories rather than preserving every unchanged
+speech file. Both are backlog items, not guarantees of the current cache behavior.
 
----
+## 6. Service and frontend
 
-## 11. Legal & IP notes (keep it fan-friendly)
+The service is a single FastAPI application served by uvicorn under
+`deploy/mst3k-anything.service` on port 8000. The frontend is one static vanilla
+HTML/CSS/JavaScript file, not React, Vite, or htmx.
 
-- **Input videos**: users riff content they choose; app is a transformative parody tool,
-  but hosting arbitrary YouTube downloads raises ToS/copyright questions — ship with a
-  "your responsibility" notice; favor public-domain catalogs for demos (Plan 9, etc.).
-- **MST3K itself**: name/characters/brand are protected. App named in homage for
-  personal/fan use is one thing; before any public/commercial release, rebrand the
-  bots as original characters, use the style guide as *craft learned*, not *lines
-  copied*, and don't redistribute MST3K footage. Downloading their videos for private
-  style-analysis is a personal-use gray area — fine for research, don't ship it.
-- **Voice cloning**: public-domain sources only (already the plan).
+Implemented UI behavior:
 
----
+- URL submission;
+- writer provider/model selection;
+- optional separate judge provider/model;
+- OpenRouter model discovery and custom model IDs;
+- Sparse → Relentless density selection;
+- SSE stage log/progress with manual-scroll recovery;
+- history, view, hide, cancel, and delete;
+- original-versus-riffed synchronized comparison player;
+- resume position, MP4/SRT downloads, and Escape-to-close playback; and
+- browser editing of `riffs.json` followed by a cheap exact-manifest rerender.
 
-## 12. Milestones
+Not currently exposed in the UI are arbitrary voice-set, snark, duck-depth, overlay,
+or upload controls. There is no live per-riff preview list or community gallery. The API
+uses one in-memory worker, so production multi-user scheduling needs a later redesign.
 
-- **M0 — Proof of concept** ✅ (this session; artifacts in `demo/`).
-- **M1 — CLI package** (`mst3k-anything riff <url>`): refactor demo scripts into one
-  Python package with stage cache, config file (provider/model/voices/ducking), SRT +
-  mp4 out. Exit: one command riffs Plan 9 end-to-end.
-- **M2 — Style framework**: MST3K ingest + distillation → STYLE_GUIDE.md v1 + example
-  bank; A/B the writer with/without it on the same clips. Voice-cloning pipeline from
-  PD sources; three locked character voices.
-- **M3 — Service + frontend**: job queue, stage streaming (SSE), submit/player UI,
-  riff re-edit + cheap re-render.
-- **M4 — Comedy quality loop**: hot-moment ranking, QA judge + rewrite pass, callbacks
-  and running-gags across the runtime, host-segment intros, animated MST3K-style
-  silhouettes, sidechain ducking.
-- **M5 — Ops**: deploy backend+frontend (a single VPS handles everything at this
-  scale; GPU optional for whisper-large), rate limiting, optional flue-based agent
-  orchestration if we outgrow the linear pipeline.
+## 7. Development and operation
 
----
+Required local components are:
 
-## 13. Open decisions (for you)
+- ffmpeg, ffprobe, and yt-dlp;
+- a Python environment with FastAPI/uvicorn for the service;
+- `asr-venv` with sherpa-onnx and numpy;
+- `tts-venv` with PocketTTS; and
+- `models/parakeet-ctc/model.int8.onnx` plus `tokens.txt`.
 
-1. **Orchestration**: Python-first MVP with flue considered for Phase 3 (recommended),
-   or go all-in on flue now?
-2. **Characters**: name/vibe for our three original bots (we need stand-ins for the
-   host + two robots)?
-3. **Frontend flavor**: React+Vite vs htmx-minimal?
-4. **Deployment target**: this machine / a VPS / elsewhere?
-5. **Hyper as the default provider** (it worked great and is dirt cheap) vs a
-   provider-switcher from day one?
+The repository is not currently packaged with a console entry point. The direct CLI
+form is:
 
----
+```bash
+PYTHONPATH=src python -m mst3k.cli render \
+  "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
+```
 
-## 9. Decisions & refinements (session 2)
+The service receives provider secrets from `.env`/systemd. Per-job provider and model
+choices are stored in SQLite and passed to the child process through environment
+variables. The VM deployment and exe.dev proxy are working; authentication, rate
+limiting, cleanup policy, and horizontal workers remain operational follow-up work.
 
-User decisions:
-1. **Voices**: closer-to-MST3K *vibe* but built from public-domain voice samples cloned
-   with Pocket TTS + pitch/EQ coloring. Silhouette characters are ORIGINAL (procedural).
-2. **Lineup**: solo snarker for v1 (single voice, one riff per window). Trio as v1.x.
-3. **Frontend**: htmx/minimal server-rendered.
-4. **Deploy**: this VM, systemd service, exe.dev proxy already routes
-   `mst3k-anything.exe.xyz` → localhost:8000.
-5. **LLM provider**: Hyper default, `.env`-controlled (url/key/model) so it's swappable.
+## 8. Style framework and legal boundary
 
-### 9.1 Ingest accepts "anything"
+The current craft framework lives in code prompts and the content-kind register. A
+separate `STYLE_GUIDE.md`, few-shot example bank, and automated distillation pipeline
+from reference riff material do not exist yet.
 
-Not just movies — any YouTube video (incl. Shorts), any archive.org direct video-file
-URL, other direct video URLs, and (v1.x) browser uploads. All converge on
-`source.mp4` + `meta.json` before stage 2, so downstream is source-agnostic.
+If that work is added, it must distill timing and joke mechanisms rather than copy lines,
+characters, catchphrases, footage, or voices. The project should keep original personas
+and use public-domain or properly licensed reference audio for any future voice cloning.
+Users are responsible for the rights and terms of source videos; the checked-in
+Deadwood example is a generated demonstration of the pipeline, not a claim of ownership
+of its underlying footage.
 
-- YouTube URLs → yt-dlp (formats, subtitles, metadata, age-gates handled).
-- archive.org direct links (`*archive.org/download/...mp4|webm|mkv...`) → HTTP
-  download with progress + Content-Length.
-- archive.org *item* pages (`/details/<id>`) → yt-dlp generic extractor.
-- Anything else → probe with HTTP HEAD/`ffprobe`; if it smells like video, download;
-  else try yt-dlp generic.
-- Guardrails: reject > 2.5 h, corrupt files, no-audio files (riff track is audio).
+## 9. Roadmap
 
-### 9.2 Content-aware writing (not just bad movies)
+### M2 — style and evaluation (future)
 
-Stage 3 (UNDERSTAND) now produces a **content profile**:
-`{kind, tone, premise, targets[], visual_gags[], pacing}` from metadata + sampled
-frames + transcript. Stage 4 (WRITE) selects its register from the profile:
+- Build a rights-conscious, opt-in analysis workflow for licensed/public-domain material.
+- Produce versioned `STYLE_GUIDE.md` and anonymized timing/mechanism examples.
+- Add a fixed-clip A/B harness for Luna, GLM, Qwen, Kimi, and future models.
+- Compare prompt variants and causal-profile projection without copying source lines.
 
-| kind | riff register |
-|---|---|
-| bad movie/show | production values, continuity, acting (classic MST3K) |
-| vlog/home video | observational teasing about choices, props, editing |
-| tutorial | deadpan corrections, over-literal questions |
-| gaming/music | play-by-play heckling, beat-synced one-liners |
+### M4 — comedy quality hardening (partial)
 
-Anchor strategy: dense cadence baseline + scene cuts, audio hot/quiet moments, and actual
-pauses. These signals improve selection and timing intent; they do not veto a strong riff
-just because the source is talking.
+- ✅ Dense cadence/audio/cut cue planning.
+- ✅ Hot-moment analysis and content-kind registers.
+- ✅ Whole-video continuity ledger plus local causal transcript/frame evidence.
+- ✅ Judge scores, one-cue rewrites, omitted-cue recovery, and final-manifest truth.
+- ✅ Natural reaction delay, intentional overlap, ducking, limiting, and procedural overlay.
+- ⏳ Make the continuity profile itself causal per cue.
+- ⏳ Add host-segment intros, richer audio-reactive animation, and better callback tracking.
+
+### M5 — operations (future)
+
+- Add installable packaging and reproducible dependency manifests.
+- Add provider/model identity to every LLM cache policy and improve shared cache strategy.
+- Preserve unchanged TTS artifacts during editor rerenders where safe.
+- Consume downloaded subtitles when their timing/quality beats ASR.
+- Chunk and merge understanding for feature-length material.
+- Add authentication, rate limiting, job quotas, cleanup, and multiple workers.
+- Consider a durable workflow/orchestration layer only if the linear Python pipeline stops
+  being sufficient; flue remains an option, not a current dependency.
+- Add browser uploads, gallery/community sharing, and richer job inspection only with
+  appropriate rights and storage controls.
+
+## 10. Closed architectural decisions
+
+- **Pipeline:** Python-first, deterministic media stages around LLM understand/write/judge.
+- **ASR/TTS:** CPU-only Parakeet via sherpa-onnx and PocketTTS; no GPU requirement.
+- **Frontend:** minimal static vanilla UI served by FastAPI.
+- **Deployment:** this VM with systemd and the exe.dev proxy for the current demo.
+- **Providers:** swappable provider/base URL/model, with Hyper as the default picker entry
+  and OpenRouter for broad multimodal selection.
+- **Voices/IP:** original personas and procedural silhouettes; do not imitate named
+  characters, actors, catchphrases, or source dialogue.
+- **Timing:** dense cadence is intentional; silence and preferred fit are not hard gates;
+  physical media boundaries are the hard limits.

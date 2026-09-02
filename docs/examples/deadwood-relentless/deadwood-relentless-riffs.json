@@ -1,0 +1,459 @@
+[
+  {
+    "gap": 1,
+    "speaker": "riffer",
+    "line": "A snowy mountain road; the label feels optimistic.",
+    "words": 8,
+    "when": 0.35,
+    "start": 8.659,
+    "duration": 3.56,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:7.8"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 2,
+    "speaker": "riffer",
+    "line": "We've confirmed it; the hills remain unhelpful.",
+    "words": 7,
+    "when": 0.35,
+    "start": 19.278,
+    "duration": 2.779708,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "frame:mid at 18.93s",
+      "transcript:9.5s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 3,
+    "speaker": "riffer",
+    "line": "Even the road gets a warning label.",
+    "words": 7,
+    "when": 0.35,
+    "start": 29.896,
+    "duration": 2.04,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "frame:mid at 29.55s",
+      "transcript:19.2s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 4,
+    "speaker": "riffer",
+    "line": "Deadwood gets a runway.",
+    "words": 4,
+    "when": 0.35,
+    "start": 35.95,
+    "duration": 1.579208,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:19.2"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 5,
+    "speaker": "riffer",
+    "line": "A parade with excellent public transit.",
+    "words": 6,
+    "when": 0.35,
+    "start": 56.577,
+    "duration": 2.44,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid at 56.23s",
+      "transcript:53.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 6,
+    "speaker": "riffer",
+    "line": "The parade has acquired a bus.",
+    "words": 6,
+    "when": 0.35,
+    "start": 65.95,
+    "duration": 2.04,
+    "timing": "button",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid at 65.6s",
+      "transcript:57.0s"
+    ],
+    "callback_to": 5,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 7,
+    "speaker": "riffer",
+    "line": "The parade has upgraded to a bus.",
+    "words": 7,
+    "when": 0.35,
+    "start": 71.295,
+    "duration": 2.36,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid at 70.94s",
+      "profile:parade-that-isnt"
+    ],
+    "callback_to": 6,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 8,
+    "speaker": "riffer",
+    "line": "The intersection remains fully booked.",
+    "words": 5,
+    "when": 0.35,
+    "start": 82.403,
+    "duration": 2.28,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "frame:mid at 82.05s",
+      "profile:traffic-signals"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 9,
+    "speaker": "riffer",
+    "line": "The parade has diversified into camper vans.",
+    "words": 7,
+    "when": 0.35,
+    "start": 94.75,
+    "duration": 2.81525,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "profile:parade-that-isnt"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 10,
+    "speaker": "riffer",
+    "line": "Green means proceed, apparently.",
+    "words": 4,
+    "when": 0.35,
+    "start": 100.017,
+    "duration": 2.031292,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "frame:mid at 99.67s",
+      "profile:traffic-signals"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 11,
+    "speaker": "riffer",
+    "line": "A generous waiting policy.",
+    "words": 4,
+    "when": 0.35,
+    "start": 119.95,
+    "duration": 2.12,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "transcript:109.5s",
+      "frame:mid at 119.6s"
+    ],
+    "callback_to": 7,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 12,
+    "speaker": "riffer",
+    "line": "The camera has had enough.",
+    "words": 5,
+    "when": 0.35,
+    "start": 127.15,
+    "duration": 1.58025,
+    "timing": "cue",
+    "mechanism": "production_critique",
+    "evidence": [
+      "frame:mid at 126.8s",
+      "profile:dashboard-view"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 13,
+    "speaker": "riffer",
+    "line": "The slow-down review board has reconvened.",
+    "words": 6,
+    "when": 0.35,
+    "start": 136.08,
+    "duration": 2.47375,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "transcript:132.2",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 14,
+    "speaker": "riffer",
+    "line": "A crossroads of deeply ordinary consequence.",
+    "words": 6,
+    "when": -0.15,
+    "start": 146.199,
+    "duration": 2.779,
+    "timing": "overlap",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:140.5"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 15,
+    "speaker": "riffer",
+    "line": "The snow has even parked itself.",
+    "words": 6,
+    "when": 0.4,
+    "start": 157.367,
+    "duration": 2.2,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 16,
+    "speaker": "riffer",
+    "line": "The old-town vibe has a long commute.",
+    "words": 7,
+    "when": 0.35,
+    "start": 167.936,
+    "duration": 2.52,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "transcript:161.3-164.6",
+      "frame:mid"
+    ],
+    "callback_to": 15,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 17,
+    "speaker": "riffer",
+    "line": "A lot of\u2014strong start, incomplete inventory.",
+    "words": 6,
+    "when": 0.35,
+    "start": 178.554,
+    "duration": 3.8,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "transcript:169.2-172.6",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 18,
+    "speaker": "riffer",
+    "line": "Pocket eights\u2014still the strongest hand on this street.",
+    "words": 8,
+    "when": 0.35,
+    "start": 189.173,
+    "duration": 3.4,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:183.8"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 19,
+    "speaker": "riffer",
+    "line": "Deadwood's traffic court has issued findings.",
+    "words": 6,
+    "when": 0.35,
+    "start": 199.791,
+    "duration": 2.779,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "transcript:199.4-206.4"
+    ],
+    "callback_to": 13,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 20,
+    "speaker": "riffer",
+    "line": "The road remains unconvinced by his complaint.",
+    "words": 7,
+    "when": 0.35,
+    "start": 210.409,
+    "duration": 2.76,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid at 210.06s",
+      "transcript:199.4-206.4"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 21,
+    "speaker": "riffer",
+    "line": "A road this empty, and even the sentence is taking its time.",
+    "words": 12,
+    "when": 0.35,
+    "start": 221.028,
+    "duration": 3.88,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:206.4"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 22,
+    "speaker": "riffer",
+    "line": "The speed review has moved to paperwork.",
+    "words": 7,
+    "when": 0.35,
+    "start": 231.646,
+    "duration": 2.173833,
+    "timing": "cue",
+    "mechanism": "escalation",
+    "evidence": [
+      "frame:mid at 231.3s",
+      "transcript:224.2"
+    ],
+    "callback_to": 21,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 23,
+    "speaker": "riffer",
+    "line": "The parade is now mostly traffic control.",
+    "words": 7,
+    "when": 0.35,
+    "start": 242.265,
+    "duration": 2.44,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid at 241.91s",
+      "transcript:48.3-57.0"
+    ],
+    "callback_to": 7,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 24,
+    "speaker": "riffer",
+    "line": "The exciting situation has become remarkably spacious.",
+    "words": 7,
+    "when": 0.35,
+    "start": 252.883,
+    "duration": 3.171625,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid at 252.53s",
+      "transcript:143.1-149.3"
+    ],
+    "callback_to": 14,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 25,
+    "speaker": "riffer",
+    "line": "The exciting situation remains mostly road and guardrail.",
+    "words": 8,
+    "when": 0.35,
+    "start": 263.502,
+    "duration": 3.314167,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:143.1-149.3"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 26,
+    "speaker": "riffer",
+    "line": "The excitement has departed.",
+    "words": 4,
+    "when": 0.35,
+    "start": 277.15,
+    "duration": 2.04,
+    "timing": "cue",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "frame:mid at 276.8s",
+      "transcript:274.1s"
+    ],
+    "callback_to": 24,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 27,
+    "speaker": "riffer",
+    "line": "Deadwood, now mostly roadway.",
+    "words": 4,
+    "when": 0.35,
+    "start": 289.924,
+    "duration": 0.023573999999939588,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid at 289.57s",
+      "transcript:140.5s"
+    ],
+    "callback_to": 13,
+    "overlap_allowed": true
+  }
+]

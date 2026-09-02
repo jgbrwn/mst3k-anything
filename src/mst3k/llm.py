@@ -13,12 +13,13 @@ def load_env() -> dict:
     path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
     path = os.path.abspath(path)
     if os.path.exists(path):
-        for line in open(path):
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip().strip('"').strip("'")
+        with open(path) as envfile:
+            for line in envfile:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip().strip('"').strip("'")
     return env
 
 
@@ -113,7 +114,8 @@ class LLM:
         only for the observed OpenRouter GLM family or when the operator opts in
         for a compatible provider/model via MST3K_REASONING_EFFORT.
         """
-        effort = os.environ.get("MST3K_REASONING_EFFORT")
+        effort = os.environ.get("MST3K_REASONING_EFFORT") or load_env().get(
+            "MST3K_REASONING_EFFORT")
         known_glm = ("openrouter.ai" in self.api_base and
                      self.model.lower().startswith("z-ai/"))
         if not effort and not known_glm:

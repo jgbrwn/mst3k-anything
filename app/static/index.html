@@ -361,7 +361,7 @@ async function renderActive(id,d,token){
     if(token!==trackToken)return;
     const value=JSON.stringify(riffs,null,2); window._riffsOriginal=value; window._activeJobId=id;
     html+=`<p class="hint">Drag the handle to compare the original and riffed video.</p>
-      <div class="compare" id="cmp"><video controls muted src="/api/jobs/${id}/video" id="orig"></video>
+      <div class="compare" id="cmp"><video controls muted src="/api/jobs/${id}/source" id="orig"></video>
       <div class="after"><video controls src="/api/jobs/${id}/video" id="riff"></video></div><div class="handle" id="handle"></div></div>
       <p><button class="btn2" onclick="playVideo(${id})">▶ Play</button> <a class="dl" href="/api/jobs/${id}/video" download>download mp4</a><a class="dl" href="/api/jobs/${id}/srt" download>riffs.srt</a></p>
       <p class="hint">Re-edit the lines below (cheap re-render, keeps media):</p>

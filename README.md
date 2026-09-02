@@ -1,7 +1,7 @@
 # mst3k-anything
 
 > Paste a video URL. Get back a robot-heckled version, perfectly timed against the
-> original audio — with the two-bot theater sitting at the bottom.
+> original audio — with a procedural theater strip along the bottom.
 
 ![current main UI — dense riff controls and resolved Writer/Judge models](docs/shots/ui-main.png)
 
@@ -11,25 +11,48 @@ figures out what's on screen and what led into each cue, asks an LLM to write
 context-specific jokes and callbacks, synthesizes them with PocketTTS in two voices,
 sidechain-ducks the original audio, and mixes the riffs in. Dialogue overlap is an
 intentional option; timing windows guide the landing rather than vetoing a good joke.
-You watch in a side-by-side player that lets you drag to compare the original versus the
-riffed pass.
+You watch the finished result in a synchronized original-versus-riffed player with a
+side-by-side comparison handle.
 
 ![current provider picker — OpenRouter writer and judge models](docs/shots/ui-providers.png)
 
 ![current player and riff editor](docs/shots/ui-player.png)
 
+## Example output
+
+[![Deadwood Relentless example](docs/examples/deadwood-relentless/poster.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-riffed.mp4)
+
+The [`Deadwood` Relentless example](docs/examples/deadwood-relentless/) is a complete
+4:50 run using density bias `4`: 27 planned cues, 27 rendered riffs, and 8 judge
+rewrites. The generated MP4, SRT, and final `riffs.json` manifest are included for
+inspection and download.
+
+## Informal model notes
+
+From the multimodal models tested so far, the working impression is that **GPT-5.6
+Luna** (`openai/gpt-5.6-luna`, via OpenRouter) writes the strongest lines and lands
+jokes most reliably. **GLM-5.3 Flash** (`z-ai/glm-5.3-flash`) has been second-best
+overall, while **Qwen 3.8 Flash** and **Kimi-k3-fast** have been useful but generally
+weaker on comic turns and timing. This is an informal observation from our runs, not a
+controlled benchmark; model choice, prompt/cache state, and source material can change
+the result.
+
 ## Highlights
 
-- **Context-sensitive riffing** — the writer doesn't just see a frame at the gap start.
-  Each riff candidate gets a *bundle*: transcript before/after, frames at T-3 / T / T+3,
-  hot-moment markers from the audio, and (for callbacks) the *full* transcript so a riff
-  at 2:00 can refer to something said at 0:15.
+- **Context-sensitive riffing** — the writer receives timestamped *pre* and *mid* frames
+  for each cue plus transcript completed through the cue. A whole-video analyst profile
+  supplies continuity, motifs, and callback candidates; prompts prohibit using later
+  reveals as if the audience has seen them.
 - **Dense, evidence-first cueing** — cadence keeps the show alive even over continuous
-  dialogue; silence, quietness, scene changes, audio energy, and visual beats improve
-  cue selection rather than acting as hard gates.
+  dialogue; silence, quietness, scene changes, audio energy, and visual signals shape
+  cue scoring rather than acting as hard gates. Riff density ranges from Sparse through
+  Relentless.
 - **CPU-safe long-form ASR** — Parakeet processes audio in bounded 60-second worker
   chunks with per-chunk cache files, so long videos do not feed one unbounded offline
   decode stream and exhaust host memory.
+- **Graceful edge cases** — short clips get a proportional lead-in, video-only inputs
+  produce riffs over generated silence, and corrupt/stale cache artifacts are rejected
+  rather than mixed into a new job.
 - **Real-time log** — after submitting a URL the UI immediately shows a console
   tailing the pipeline stage-by-stage. It follows the newest output, briefly allows
   manual scrolling, then returns to the live tail; failed-job logs remain visible.
@@ -62,18 +85,23 @@ riffed pass.
 ## Quick start
 
 ```bash
-# prerequisites: ffmpeg, yt-dlp, ASR model files (see docs/PLAN.md)
-python3 -m venv web-venv && pip install -r web-venv-required.txt  # fastapi uvicorn
-uv venv asr-venv && uv pip install sherpa-onnx numpy
-uv venv tts-venv && uv pip install pocket-tts
-# voice/asr model blobs land in models/ — the pipeline downloads the first time.
+# prerequisites: ffmpeg, yt-dlp, an ASR model (see docs/PLAN.md)
+python3 -m venv web-venv
+web-venv/bin/pip install fastapi uvicorn
+uv venv asr-venv && uv pip install --python asr-venv/bin/python sherpa-onnx numpy
+uv venv tts-venv && uv pip install --python tts-venv/bin/python pocket-tts
+# Put Parakeet files at models/parakeet-ctc/model.int8.onnx and tokens.txt.
 
-echo "LLM_API_KEY=sk-..." > .env   # or set per-job via the UI picker
-PYTHONPATH=src mst3k render "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
+# configure a provider (or use the WebUI picker)
+cp .env.example .env
+# edit .env and add the provider API key/model
+
+PYTHONPATH=src python -m mst3k.cli render "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
 ```
 
 The web service runs under systemd (see `deploy/mst3k-anything.service`). The CLI
-also works directly.
+also works directly; the repository is not currently packaged as an installable
+console script.
 
 ## Repo layout
 
@@ -84,7 +112,7 @@ app/              FastAPI service + static UI (index.html)
 deploy/           systemd unit
 demo/, jobs/      runtime artifacts (git-ignored)
 models/           ASR model weights (git-ignored)
-docs/             PLAN, shots for this README
+docs/             PLAN, README shots, and the completed Deadwood example
 ```
 
 ## License

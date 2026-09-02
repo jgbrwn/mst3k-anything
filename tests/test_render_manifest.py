@@ -77,6 +77,14 @@ class RenderManifestTests(unittest.TestCase):
         with patch.object(client, "chat", side_effect=['{"x":', '{"x": 1}']):
             self.assertEqual(client.chat_json([{"role": "user", "content": "json"}])["x"], 1)
 
+    def test_llm_retries_an_empty_gateway_content_response(self):
+        client = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
+        with patch.object(client, "chat", side_effect=[
+            RuntimeError("LLM response from ... contained no text content"),
+            '{"ok": true}'
+        ]):
+            self.assertTrue(client.chat_json([{"role": "user", "content": "json"}])["ok"])
+
     def test_reasoning_controls_are_known_or_explicitly_opted_in(self):
         glm = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
         generic = llm.LLM("https://api.example/v1", "key", "model")
@@ -87,13 +95,7 @@ class RenderManifestTests(unittest.TestCase):
             self.assertEqual(generic._reasoning_options(),
                              {"reasoning_effort": "low", "include_reasoning": False})
 
-        client = llm.LLM("https://openrouter.ai/api/v1", "key", "z-ai/glm-5.3-flash")
-        with patch.object(client, "chat", side_effect=[
-            RuntimeError("LLM response from ... contained no text content"),
-            '{"ok": true}'
-        ]):
-            self.assertTrue(client.chat_json([{"role": "user", "content": "json"}])["ok"])
-
+    def test_continuous_audio_still_gets_cadence_cues(self):
         with tempfile.TemporaryDirectory() as tmp:
             job = dict(config.DEFAULTS)
             job.update({"dir": Path(tmp), "source": Path("missing.mp4"),
