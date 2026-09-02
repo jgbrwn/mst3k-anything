@@ -8,10 +8,87 @@ ffmpeg timing/tone tweaks for color.
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 from .cache import file_signature, value_digest
+
+VOICE_CACHE_VERSION = 1
+
+
+def _voice_reference(job: dict):
+    """Resolve the configured local/remote conditioning source."""
+    raw = str(job.get("voice_ref") or "").strip()
+    if not raw:
+        return None
+    if "://" in raw:
+        return raw
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    if not path.exists() or not path.is_file():
+        raise RuntimeError(f"VOICE_REF does not exist or is not a file: {path}")
+    return path
+
+
+def validate_voice_reference(job: dict) -> None:
+    """Fail before media work when a configured local reference is missing."""
+    _voice_reference(job)
+
+
+def prepare_voice_reference(source: str | Path, output: str | Path,
+                            pocket_tts: str | Path, *, force: bool = False) -> Path:
+    """Convert a voice sample to PocketTTS state, once, for fast reuse."""
+    source_text = str(source)
+    if "://" not in source_text:
+        source_path = Path(source_text).expanduser()
+        if not source_path.exists() or not source_path.is_file():
+            raise RuntimeError(f"custom voice source does not exist or is not a file: {source_path}")
+    output = Path(output).expanduser()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if source_text.lower().split("?", 1)[0].endswith(".safetensors"):
+        source_path = Path(source_text).expanduser()
+        if not source_path.exists():
+            raise RuntimeError(f"custom voice state does not exist: {source_path}")
+        if source_path.resolve() != output.resolve():
+            shutil.copy2(source_path, output)
+            return output
+        return source_path
+    if output.exists() and output.stat().st_size > 0 and not force:
+        return output
+    tmp = output.with_suffix(output.suffix + ".tmp")
+    tmp.unlink(missing_ok=True)
+    try:
+        subprocess.run([str(pocket_tts), "export-voice", "-q", source_text,
+                        str(tmp)], check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "PocketTTS could not prepare VOICE_REF. Accept the PocketTTS model "
+            "conditions on Hugging Face and run `hf auth login`, then retry."
+        ) from exc
+    if not tmp.exists() or tmp.stat().st_size <= 0:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError("PocketTTS produced an empty custom voice state")
+    tmp.replace(output)
+    return output
+
+
+def _prepared_voice(job: dict):
+    source = _voice_reference(job)
+    if source is None:
+        return None
+    source_text = str(source)
+    if source_text.lower().split("?", 1)[0].endswith(".safetensors"):
+        return Path(source_text).expanduser() if "://" not in source_text else source_text
+    signature = file_signature(source) if isinstance(source, Path) else None
+    key = value_digest({"version": VOICE_CACHE_VERSION, "source": source_text,
+                        "signature": signature})[:20]
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", Path(source_text).stem).strip("-") or "voice"
+    cache_dir = Path(job.get("voice_cache_dir") or
+                     (Path.home() / ".cache" / "mst3k-anything" / "voices"))
+    return prepare_voice_reference(source, cache_dir / f"{stem}-{key}.safetensors",
+                                  job["pocket_tts"])
 
 
 def _cache_key(line: str, voice_name: str, voice: dict | None = None,
@@ -19,21 +96,36 @@ def _cache_key(line: str, voice_name: str, voice: dict | None = None,
     voice = voice or {}
     job = job or {}
     blob = {
-        "version": 2,
+        "version": 3,
         "text": line,
         "voice": voice_name,
         "pitch": float(voice.get("pitch", job.get("voice_pitch", 0.0)) or 0.0),
         "rate": float(voice.get("rate", job.get("voice_rate", 1.0)) or 1.0),
-        "voice_ref": file_signature(job["voice_ref"]) if job.get("voice_ref") else None,
+        "voice_ref": _voice_ref_cache_value(job),
         "hints": hint_filters(line),
     }
     return value_digest(blob)[:20]
 
 
+def _voice_ref_cache_value(job: dict):
+    raw = str(job.get("voice_ref") or "").strip()
+    if not raw:
+        return None
+    if "://" in raw:
+        return {"value": raw}
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return {"value": raw, "file": file_signature(path)}
+
+
 def pick_voice(job: dict, riff: dict) -> dict:
-    """Deterministically assign a pool voice to a riff based on (gap,line)."""
-    pool = job.get("voices") or [{"name": None, "pitch": job["voice_pitch"],
-                                  "rate": job["voice_rate"], "weight": 1.0}]
+    """Deterministically assign a pool voice, or use one custom reference voice."""
+    if job.get("voice_ref"):
+        return {"name": "custom", "pitch": float(job.get("voice_pitch", 0.0) or 0.0),
+                "rate": float(job.get("voice_rate", 1.0) or 1.0), "weight": 1.0}
+    pool = job.get("voices") or [{"name": None, "pitch": 0.0,
+                                  "rate": 1.0, "weight": 1.0}]
     weights = [float(v.get("weight", 1.0)) for v in pool]
     total = sum(weights)
     h = int(hashlib.sha256(f"{riff['gap']}:{riff['line']}".encode()).hexdigest(), 16)
@@ -42,8 +134,14 @@ def pick_voice(job: dict, riff: dict) -> dict:
     for v, w in zip(pool, weights):
         cume += w
         if pick <= cume:
-            return v
-    return pool[-1]
+            selected = dict(v)
+            selected["pitch"] = float(selected.get("pitch", 0.0) or 0.0) + float(job.get("voice_pitch", 0.0) or 0.0)
+            selected["rate"] = float(selected.get("rate", 1.0) or 1.0) * float(job.get("voice_rate", 1.0) or 1.0)
+            return selected
+    selected = dict(pool[-1])
+    selected["pitch"] = float(selected.get("pitch", 0.0) or 0.0) + float(job.get("voice_pitch", 0.0) or 0.0)
+    selected["rate"] = float(selected.get("rate", 1.0) or 1.0) * float(job.get("voice_rate", 1.0) or 1.0)
+    return selected
 
 
 def synthesize(job: dict, riff: dict) -> dict:
@@ -60,14 +158,15 @@ def synthesize(job: dict, riff: dict) -> dict:
     if wav.exists() and probe_duration(wav) <= 0:
         wav.unlink(missing_ok=True)
     if not wav.exists():
+        conditioned_voice = _prepared_voice(job)
         tmp = cache / f"{key}.tmp.wav"
         tmp.unlink(missing_ok=True)
         cmd = [job["pocket_tts"], "generate", "-q", "--text", riff["line"],
                "--output-path", str(tmp)]
-        if vname:
+        if conditioned_voice is not None:
+            cmd += ["--voice", str(conditioned_voice)]
+        elif vname:
             cmd += ["--voice", vname]
-        if job["voice_ref"]:
-            cmd += ["--voice", job["voice_ref"]]
         subprocess.run(cmd, check=True, capture_output=True)
         if probe_duration(tmp) <= 0:
             tmp.unlink(missing_ok=True)

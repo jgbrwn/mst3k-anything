@@ -129,6 +129,65 @@ class RenderManifestTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["timing"], "overlap")
 
+    def test_custom_voice_overrides_pool_and_global_color_applies(self):
+        job = dict(config.DEFAULTS)
+        job.update({"voice_ref": "/tmp/consented-reference.wav",
+                    "voice_pitch": -1.0, "voice_rate": 0.96})
+        selected = voice.pick_voice(job, {"gap": 1, "line": "hello"})
+        self.assertEqual(selected["name"], "custom")
+        self.assertEqual(selected["pitch"], -1.0)
+        self.assertEqual(selected["rate"], 0.96)
+
+    def test_builtin_pool_includes_global_pitch_and_rate(self):
+        job = dict(config.DEFAULTS)
+        job.update({"voice_pitch": -1.0, "voice_rate": 0.96})
+        selected = voice.pick_voice(job, {"gap": 1, "line": "hello"})
+        self.assertIn(selected["name"], {"alba", "jane"})
+        self.assertIn(selected["pitch"], {-1.0, 1.0})
+        self.assertEqual(selected["rate"], 0.96)
+
+    def test_prepare_voice_reference_exports_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "reference.wav"
+            output = Path(tmp) / "reference.safetensors"
+            source.write_bytes(b"wav")
+
+            def export(cmd, check):
+                Path(cmd[-1]).write_bytes(b"state")
+
+            with patch.object(voice.subprocess, "run", side_effect=export) as run:
+                self.assertEqual(voice.prepare_voice_reference(
+                    source, output, "pocket-tts"), output)
+                self.assertEqual(voice.prepare_voice_reference(
+                    source, output, "pocket-tts"), output)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0][1:3], ["export-voice", "-q"])
+
+    def test_custom_voice_synthesis_uses_prepared_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reference = Path(tmp) / "reference.wav"
+            reference.write_bytes(b"reference")
+            job = {"dir": Path(tmp), "voice_ref": str(reference),
+                   "voices": config.DEFAULTS["voices"], "voice_pitch": 0.0,
+                   "voice_rate": 1.0, "voice_cache_dir": Path(tmp) / "voice-cache",
+                   "pocket_tts": "pocket-tts", "max_riff_seconds": 9,
+                   "max_tempo_stretch": 1.18}
+            prepared = Path(tmp) / "prepared.safetensors"
+
+            def generate(cmd, check, capture_output):
+                Path(cmd[cmd.index("--output-path") + 1]).write_bytes(b"wav")
+
+            with patch.object(voice, "_prepared_voice", return_value=prepared), \
+                 patch.object(voice, "probe_duration", return_value=1.0), \
+                 patch.object(voice.subprocess, "run", side_effect=generate) as run:
+                result = voice.synthesize(job, {
+                    "gap": 1, "line": "a custom aside", "_gap": {"usable": 2.0}
+                })
+            self.assertTrue(result["ok"])
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--voice") + 1], str(prepared))
+            self.assertNotIn("alba", command)
+
     def test_voice_does_not_drop_a_long_riff_for_preferred_window(self):
         with tempfile.TemporaryDirectory() as tmp:
             tts = Path(tmp) / "tts"

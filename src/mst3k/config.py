@@ -10,6 +10,7 @@ DEFAULTS = {
     # paths
     "jobs_dir": BASE / "jobs",
     "pocket_tts": BASE / "tts-venv/bin/pocket-tts",
+    "voice_cache_dir": Path.home() / ".cache" / "mst3k-anything" / "voices",
     # LLM (swappable via .env). Model fields are EMPTY by default so per-provider
     # defaults kick in when the user picks a non-Hyper provider; setting
     # HYPER/NEURALWATT/OPENROUTER_WRITER_MODEL in .env overrides.
@@ -18,9 +19,9 @@ DEFAULTS = {
     "llm_model": "",
     "llm_understand_model": "",
     # voice lineup (ensemble configuration)
-    "voice_ref": None,          # solo: optional public-domain wav to clone
-    "voice_rate": 1.0,
-    "voice_pitch": 0.0,         # semitones; e.g. +2 for puppet-y
+    "voice_ref": None,          # optional local wav or PocketTTS .safetensors conditioning state
+    "voice_rate": 1.0,          # global multiplier on built-in/custom delivery rate
+    "voice_pitch": 0.0,         # global semitone offset; pool pitches are added to it
     "voices": [                 # ensemble: Alba default + Jane sidekick
         {"name": "alba", "pitch": 0.0, "rate": 1.0, "weight": 0.7},
         {"name": "jane", "pitch": 2.0, "rate": 1.0, "weight": 0.3},
@@ -106,6 +107,9 @@ def load() -> dict:
         try: cfg["riff_gain"] = float(env.get("RIFF_GAIN") or env.get("RIFT_GAIN"))
         except ValueError: pass
     if env.get("VOICE_REF"): cfg["voice_ref"] = env["VOICE_REF"]
+    if env.get("VOICE_RATE"):
+        try: cfg["voice_rate"] = float(env["VOICE_RATE"])
+        except ValueError: pass
     if env.get("VOICE_PITCH"):
         try: cfg["voice_pitch"] = float(env["VOICE_PITCH"])
         except ValueError: pass

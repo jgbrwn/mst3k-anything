@@ -164,12 +164,33 @@ at a time; and drops only when no grounded joke remains. `judged_riffs.json` is 
 work/debug artifact. The public `riffs.json` is written only after synthesis and
 contains only placements that actually reached the mixer.
 
-### 3.6 PocketTTS and placement
+### 3.6 PocketTTS, custom voice conditioning, and placement
 
 PocketTTS generates local speech. The default pool is two built-in voices (`alba` and
-`jane`) with deterministic per-riff assignment, pitch/rate coloring, and optional
-reference-voice configuration. TTS outputs are measured with ffprobe and cached under
-`tts/` using text, voice, pitch/rate, reference-file, and delivery-hint inputs.
+`jane`) with deterministic per-riff assignment. The current voice pipeline has two
+modes:
+
+- **Built-in mode:** pool-specific pitch/rate coloring is applied, then global
+  `VOICE_PITCH` (semitones) and `VOICE_RATE` (multiplier) are applied. The current
+  defaults are Alba at 0 semitones and Jane at +2 semitones. Writer emphasis marks and
+  timing-fit tempo changes add small output-stage effects afterward.
+- **Custom-reference mode:** setting `VOICE_REF` switches to one local custom voice
+  instead of randomly selecting Alba/Jane. It accepts a WAV reference or a PocketTTS
+  `.safetensors` conditioning state. A WAV is converted once with PocketTTS's
+  `export-voice` command into `~/.cache/mst3k-anything/voices/`; the resulting state is
+  reused by later riffs/jobs. The current entry point is the CLI or global `.env`, not
+  the WebUI. One-off renders also accept `--voice-ref`, `--voice-pitch`, and
+  `--voice-rate`.
+
+`python -m mst3k.cli prepare-voice SOURCE --out STATE.safetensors` performs that
+conversion explicitly. The reference must be lawfully usable and consented for voice
+conditioning. PocketTTS's export path uses the first 30 seconds of the reference, so a
+clean, representative sample is preferred. PocketTTS model access/authentication is a
+prerequisite for a first custom-voice export; the setup steps are in the README. The
+application does not clone named performers or characters.
+
+TTS outputs are measured with ffprobe and cached under `tts/` using text, voice,
+pitch/rate, reference-file, and delivery-hint inputs.
 
 The preferred cue envelope and word budget guide delivery but do not reject a good line.
 A modest tempo stretch may help a button; a longer riff is intentionally allowed to run
@@ -311,6 +332,12 @@ PYTHONPATH=src python -m mst3k.cli render \
   "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
 ```
 
+Optional custom-reference setup follows the same steps as the README: accept the gated
+conditions on the [PocketTTS model page](https://huggingface.co/kyutai/pocket-tts), run
+`tts-venv/bin/hf auth login` and `tts-venv/bin/hf auth whoami`, then use
+`prepare-voice` or `VOICE_REF`. Authentication is local to the Hugging Face CLI; the
+browser UI must never receive the token.
+
 The service receives provider secrets from `.env`/systemd. Per-job provider and model
 choices are stored in SQLite and passed to the child process through environment
 variables. The VM deployment and exe.dev proxy are working; authentication, rate
@@ -324,7 +351,8 @@ from reference riff material do not exist yet.
 
 If that work is added, it must distill timing and joke mechanisms rather than copy lines,
 characters, catchphrases, footage, or voices. The project should keep original personas
-and use public-domain or properly licensed reference audio for any future voice cloning.
+and use public-domain or properly licensed, consented reference audio for current custom
+voice conditioning and any future cloning workflows.
 Users are responsible for the rights and terms of source videos; the checked-in
 Deadwood example is a generated demonstration of the pipeline, not a claim of ownership
 of its underlying footage.
@@ -348,7 +376,7 @@ of its underlying footage.
 - ⏳ Make the continuity profile itself causal per cue.
 - ⏳ Add host-segment intros, richer audio-reactive animation, and better callback tracking.
 
-### M5 — operations (future)
+### M5 — operations and voice workflow (future)
 
 - Add installable packaging and reproducible dependency manifests.
 - Add provider/model identity to every LLM cache policy and improve shared cache strategy.
@@ -356,6 +384,10 @@ of its underlying footage.
 - Consume downloaded subtitles when their timing/quality beats ASR.
 - Chunk and merge understanding for feature-length material.
 - Add authentication, rate limiting, job quotas, cleanup, and multiple workers.
+- Keep the current CLI custom-reference workflow, then add a private WebUI voice library:
+  upload/choose a reference, validate format/duration, require a rights/consent
+  acknowledgement, prepare/cache the PocketTTS state, preview the base voice, and expose
+  per-job pitch/rate transforms. Never expose HF tokens through the browser.
 - Consider a durable workflow/orchestration layer only if the linear Python pipeline stops
   being sufficient; flue remains an option, not a current dependency.
 - Add browser uploads, gallery/community sharing, and richer job inspection only with
@@ -369,7 +401,8 @@ of its underlying footage.
 - **Deployment:** this VM with systemd and the exe.dev proxy for the current demo.
 - **Providers:** swappable provider/base URL/model, with Hyper as the default picker entry
   and OpenRouter for broad multimodal selection.
-- **Voices/IP:** original personas and procedural silhouettes; do not imitate named
-  characters, actors, catchphrases, or source dialogue.
+- **Voices/IP:** original personas and procedural silhouettes; built-in/custom voice
+  conditioning is allowed only for lawfully usable, consented material. Do not imitate
+  named characters, actors, catchphrases, or source dialogue.
 - **Timing:** dense cadence is intentional; silence and preferred fit are not hard gates;
   physical media boundaries are the hard limits.

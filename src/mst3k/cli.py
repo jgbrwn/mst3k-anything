@@ -33,8 +33,31 @@ def write_rendered_manifest(job_dir: Path, placements: list[dict]) -> Path:
     return manifest
 
 
+def cmd_prepare_voice(args) -> None:
+    """Precompute a PocketTTS conditioning state from a consented reference."""
+    job = cfgmod.load()
+    source = str(Path(args.source).expanduser()) if "://" not in args.source else args.source
+    output = Path(args.out).expanduser().resolve()
+    try:
+        prepared = voice.prepare_voice_reference(source, output, job["pocket_tts"],
+                                                 force=True)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Prepared custom voice: {prepared}")
+
+
 def cmd_render(args) -> None:
     job = cfgmod.load()
+    if args.voice_ref:
+        job["voice_ref"] = args.voice_ref
+    if args.voice_pitch is not None:
+        job["voice_pitch"] = args.voice_pitch
+    if args.voice_rate is not None:
+        job["voice_rate"] = args.voice_rate
+    try:
+        voice.validate_voice_reference(job)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     # prefer recent yt-dlp in ~/.local/bin over any system copy; add to PATH
     local_yt = Path.home() / ".local" / "bin"
     if (local_yt / "yt-dlp").exists():
@@ -237,9 +260,20 @@ def cmd_render(args) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(prog="mst3k", description="MST3K-ify any video")
     sub = p.add_subparsers(dest="cmd", required=True)
+    pv = sub.add_parser("prepare-voice", help="precompute a PocketTTS custom voice state")
+    pv.add_argument("source", help="consented local WAV/reference audio or .safetensors state")
+    pv.add_argument("-o", "--out", required=True,
+                    help="output .safetensors path")
+    pv.set_defaults(fn=cmd_prepare_voice)
+
     r = sub.add_parser("render", help="download + riff + render")
     r.add_argument("source", help="YouTube URL, archive.org URL, video URL, or local path")
     r.add_argument("-o", "--out", help="output directory (default: job dir)")
+    r.add_argument("--voice-ref", help="local consented WAV or PocketTTS .safetensors voice state")
+    r.add_argument("--voice-pitch", type=float,
+                    help="global voice pitch offset in semitones")
+    r.add_argument("--voice-rate", type=float,
+                    help="global voice delivery-rate multiplier")
     r.set_defaults(fn=cmd_render)
     args = p.parse_args()
     args.fn(args)

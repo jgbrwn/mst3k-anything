@@ -78,7 +78,7 @@ the result.
 | Transcription | sherpa-onnx + Parakeet 110M INT8 | CPU-only, RTF 0.05 |
 | Video analysis | ffmpeg frame grabs + signalstats | shot context, luma variance |
 | Comedy brain | any OpenAI-compatible chat-completions API | system prompt templates per content kind |
-| Voices | PocketTTS | built-in voices (alba/jane by default) |
+| Voices | PocketTTS | built-in voices (alba/jane) by default; optional CLI custom reference conditioning via `VOICE_REF` |
 | Mix | ffmpeg sidechaincompress + overlay | animated theater via static PNG (default) |
 | Service | FastAPI + uvicorn + SQLite | the web UI / job queue |
 
@@ -98,6 +98,57 @@ cp .env.example .env
 
 PYTHONPATH=src python -m mst3k.cli render "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
 ```
+
+### Optional custom voice (CLI/global configuration for now)
+
+PocketTTS voice cloning is not exposed in the WebUI yet, but the CLI can use a local,
+consented reference recording through `VOICE_REF`. The gated [PocketTTS model
+page](https://huggingface.co/kyutai/pocket-tts) is CC-BY-4.0 and requires accepting its
+current access/acceptable-use conditions, including the requested contact-information
+sharing and explicit lawful consent for voice cloning. Before the first clone, sign in
+there and authenticate the environment that owns `pocket-tts`:
+
+```bash
+tts-venv/bin/hf auth login
+tts-venv/bin/hf auth whoami
+```
+
+That is Hugging Face authentication; `uv` created the environment but does not replace
+`hf auth login`. The upstream PocketTTS instructions also show `uvx hf auth login`;
+using the project-local executable keeps the token in the same user-level Hugging Face
+cache. Do not commit the token or put it in `.env`.
+
+PocketTTS's [`export-voice` command](https://github.com/kyutai-labs/pocket-tts/blob/main/docs/CLI%20Commands/export_voice.md)
+processes the first 30 seconds of the reference and writes a reusable `.safetensors`
+conditioning state, so use a clean, representative sample.
+
+Precompute a reusable conditioning state:
+
+```bash
+PYTHONPATH=src python -m mst3k.cli prepare-voice \
+  /absolute/path/to/consented-reference.wav \
+  --out /absolute/path/to/my-riffer.safetensors
+```
+
+Then set `VOICE_REF` in `.env` to either that `.safetensors` file or the original WAV
+(the latter is exported automatically to the local voice cache on first CLI render):
+
+```bash
+VOICE_REF=/absolute/path/to/my-riffer.safetensors
+VOICE_PITCH=0.0   # semitone offset applied after conditioning
+VOICE_RATE=1.0    # delivery-rate multiplier
+```
+
+The built-in pool is also colored: Alba is neutral and Jane is currently +2 semitones.
+`VOICE_PITCH` adds a global offset to either built-in voice or a custom reference, while
+`VOICE_RATE` scales delivery speed. Writer emphasis marks and fit-related tempo changes
+are applied afterward. If the built-ins feel too bright/robotic, try `VOICE_PITCH=-1.0`
+and `VOICE_RATE=0.96`; a custom voice starts from its own recording and receives only
+those configured/output-stage transforms. Custom voice selection is currently CLI/.env
+based. For a one-off CLI render, the same settings are available as `--voice-ref`,
+`--voice-pitch`, and `--voice-rate` flags instead of editing `.env`. WebUI upload,
+consent, previews, and per-job voice controls are planned rather than implemented.
+
 
 The web service runs under systemd (see `deploy/mst3k-anything.service`). The CLI
 also works directly; the repository is not currently packaged as an installable
