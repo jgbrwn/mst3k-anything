@@ -232,9 +232,12 @@ providers are:
 | Neuralwatt | `kimi-k3-fast` | selectable writer/judge/understanding route |
 | OpenRouter | explicit `provider/model` | selectable model picker, including multimodal models |
 
-Writer and judge can be assigned separately per submission. Understanding currently
-uses the normal resolved writer route; the legacy `LLM_UNDERSTAND_MODEL` setting is not
-a separate active role. There is no implemented separate punch-up stage.
+Hyper and Neuralwatt expose OpenAI-compatible `/models` catalogs with differing metadata
+shapes; the backend normalizes them and filters to high-context models advertising vision.
+If a provider cannot publish usable capabilities, the UI still leaves the override as a
+free-text field and blank values retain the configured default. OpenRouter keeps its
+existing specialized high-context multimodal catalog.
+
 
 Structured-call recovery is provider/model agnostic:
 
@@ -303,7 +306,7 @@ Implemented UI behavior:
 - URL submission;
 - writer provider/model selection;
 - optional separate judge provider/model;
-- OpenRouter model discovery and custom model IDs;
+- OpenRouter model discovery plus normalized Hyper/Neuralwatt multimodal model catalogs and custom model IDs;
 - Sparse → Relentless density selection;
 - SSE stage log/progress with manual-scroll recovery;
 - history, view, hide, cancel, and delete;

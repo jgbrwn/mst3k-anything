@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mst3k import analyze, config, llm, transcribe, voice, writer
+from mst3k import analyze, config, llm, providers, transcribe, voice, writer
 from mst3k.cli import write_rendered_manifest
 
 
@@ -71,6 +71,26 @@ class RenderManifestTests(unittest.TestCase):
         self.assertEqual(counts, sorted(counts))
         self.assertGreater(counts[2], 15)
         self.assertGreater(counts[4], counts[2])
+
+    def test_provider_catalog_normalizes_vision_capabilities(self):
+        hyper = providers._normalize_model({
+            "id": "qwen3.8-flash", "display_name": "Qwen3.8 Flash",
+            "context_window": 1000000, "capabilities": {"vision": True}
+        })
+        neural = providers._normalize_model({
+            "id": "kimi-k3-fast", "metadata": {
+                "display_name": "Kimi K3 Fast", "capabilities": {"vision": True}
+            }, "max_model_len": 1048560
+        })
+        text_only = providers._normalize_model({
+            "id": "text", "context_window": 128000,
+            "capabilities": {"vision": False}
+        })
+        self.assertEqual(hyper["supports_vision"], True)
+        self.assertEqual(neural["context_length"], 1048560)
+        self.assertEqual(text_only["supports_vision"], False)
+        selected = providers._filter_multimodal([hyper, neural, text_only])
+        self.assertEqual([m["id"] for m in selected], ["kimi-k3-fast", "qwen3.8-flash"])
 
     def test_llm_repairs_truncated_json_once(self):
         client = llm.LLM("https://example.invalid", "key", "model")

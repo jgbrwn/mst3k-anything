@@ -5,9 +5,9 @@ Configuration source order:
 2. request-time override {"provider": ..., "model": ...} -> job["llm"]
 3. per-provider defaults table
 
-Each provider row carries base URL + model. The UI pulls this for the picker;
-openrouter additionally exposes a live model list (high-context, multimodal)
-that the picker merges with its own model.
+Each provider row carries base URL + model. The UI pulls a normalized high-context
+multimodal catalog from `/models` when the provider exposes one; OpenRouter retains its
+specialized live filter. Users can always type a model ID when discovery is unavailable.
 """
 import json
 import os
@@ -64,6 +64,114 @@ def load_providers() -> dict:
 
 
 _CACHE = ROOT / "app" / "data" / "or_models.json"
+_MODEL_CACHE_DIR = ROOT / "app" / "data"
+
+
+def _as_context_length(model: dict, metadata: dict) -> int:
+    for key in ("context_length", "context_window", "max_context_length",
+                "max_model_len"):
+        value = model.get(key, metadata.get(key))
+        try:
+            if value is not None:
+                return int(value)
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
+def _as_vision_flag(model: dict, metadata: dict):
+    """Read common OpenAI/vLLM/provider capability shapes."""
+    capability_sources = [
+        model.get("capabilities"),
+        metadata.get("capabilities"),
+        model.get("architecture"),
+        metadata,
+    ]
+    for source in capability_sources:
+        if not isinstance(source, dict):
+            continue
+        for key in ("vision", "supports_vision", "multimodal", "image_input"):
+            if key in source and isinstance(source[key], bool):
+                return source[key]
+        for key in ("input_modalities", "modalities", "modality"):
+            value = source.get(key)
+            if isinstance(value, str):
+                value = value.lower()
+                if "image" in value or "vision" in value or "multimodal" in value:
+                    return True
+            elif isinstance(value, (list, tuple)):
+                values = {str(item).lower() for item in value}
+                if values & {"image", "vision", "multimodal"}:
+                    return True
+    return None
+
+
+def _normalize_model(model: dict) -> dict | None:
+    if not isinstance(model, dict):
+        return None
+    metadata = model.get("metadata") if isinstance(model.get("metadata"), dict) else {}
+    model_id = model.get("id") or model.get("name")
+    if not model_id:
+        return None
+    return {
+        "id": str(model_id),
+        "name": str(model.get("display_name") or metadata.get("display_name") or
+                         model.get("name") or model_id),
+        "context_length": _as_context_length(model, metadata),
+        "supports_vision": _as_vision_flag(model, metadata),
+    }
+
+
+def _filter_multimodal(models: list[dict], min_context: int = 128_000) -> list[dict]:
+    eligible = [m for m in models
+                if not m.get("context_length") or m["context_length"] >= min_context]
+    known_flags = [m.get("supports_vision") for m in eligible
+                   if m.get("supports_vision") is not None]
+    # If the provider publishes capability metadata, show only models that can
+    # consume the frames used by understand/write/judge. If it does not, keep
+    # the catalog usable and let the user type/select a model to try.
+    if known_flags:
+        eligible = [m for m in eligible if m.get("supports_vision") is True]
+    return sorted(eligible, key=lambda m: (-m.get("context_length", 0), m["id"]))
+
+
+def provider_models(provider: str, ttl_sec: int = 3600,
+                    min_context: int = 128_000) -> list[dict]:
+    """Return a provider's high-context multimodal models when discoverable.
+
+    OpenRouter retains its existing specialized catalog/filter. Hyper and
+    Neuralwatt expose OpenAI-compatible `/models` payloads, but their field
+    shapes differ, so they are normalized here. A provider can still accept a
+    hand-entered model when discovery fails or lacks capability metadata.
+    """
+    if provider == "openrouter":
+        return [{**model, "supports_vision": True}
+                for model in openrouter_models(min_context=min_context)]
+    table = load_providers()
+    row = table.get(provider)
+    if not row:
+        raise RuntimeError(f"unknown LLM provider {provider!r}")
+    if not row.get("key"):
+        raise RuntimeError(f"LLM provider {provider!r} has no API key configured")
+    cache = _MODEL_CACHE_DIR / f"{provider}_models.json"
+    import time
+    if cache.exists() and (time.time() - cache.stat().st_mtime) < ttl_sec:
+        try:
+            return json.loads(cache.read_text())
+        except (OSError, json.JSONDecodeError):
+            pass
+    req = urllib.request.Request(row["base_url"].rstrip("/") + "/models",
+                                 headers={"Authorization": f"Bearer {row['key']}"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        payload = json.load(resp)
+    raw_models = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(raw_models, list):
+        raise RuntimeError(f"provider {provider!r} returned no model list")
+    models = _filter_multimodal([m for m in (_normalize_model(item) for item in raw_models)
+                                 if m is not None], min_context=min_context)
+    cache.parent.mkdir(exist_ok=True)
+    cache.write_text(json.dumps(models, indent=2))
+    return models
 
 
 def openrouter_models(ttl_sec: int = 3600, min_context: int = 128_000,

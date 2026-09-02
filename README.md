@@ -14,7 +14,7 @@ intentional option; timing windows guide the landing rather than vetoing a good 
 You watch the finished result in a synchronized original-versus-riffed player with a
 side-by-side comparison handle.
 
-![current provider picker — OpenRouter writer and judge models](docs/shots/ui-providers.png)
+![current provider picker — multimodal model catalogs for writer and judge](docs/shots/ui-providers.png)
 
 ![current player and riff editor](docs/shots/ui-player.png)
 
@@ -63,8 +63,9 @@ the result.
 - **Stable job lifecycle** — each API submission gets a private work directory, while
   the database slug becomes a human title slug after ingest. Repeated submissions of
   the same video cannot overwrite each other's logs, PIDs, or outputs.
-- **Multi-provider LLM** — pick Hyper, Neuralwatt, or OpenRouter (full
-  OpenRouter high-context multimodal picker included); per-job selectable.
+- **Multi-provider LLM** — pick Hyper, Neuralwatt, or OpenRouter; each provider can
+  expose a high-context multimodal model catalog for both Writer and Judge, while blank
+  Hyper/Neuralwatt overrides fall back to their `.env` defaults.
 - **Provider-resilient structured LLM calls** — empty content, structured content blocks,
   truncated JSON, and transient provider failures are retried for every provider. Provider-
   specific reasoning controls are applied only when known-supported or explicitly configured.

@@ -17,7 +17,7 @@
     border-radius:3px; opacity:.8; box-shadow:0 0 24px #c0392b33 }
   h1 { font-family:Georgia,serif; letter-spacing:.03em; margin:.65em 0 .1em; font-size:2.1rem }
   .tag { color:var(--dim); margin:0 0 1.5rem }
-  form { display:grid; grid-template-columns:minmax(0,1fr) 170px 170px 130px auto; gap:.6rem; margin-bottom:1.4rem }
+  form { display:grid; grid-template-columns:minmax(0,1fr) 170px 170px 130px; gap:.6rem; margin-bottom:1.4rem }
   input, select { padding:.68rem .8rem; background:var(--panel); border:1px solid var(--line);
     border-radius:8px; color:var(--ink); font-size:.95rem; min-width:0 }
   input:focus, select:focus, textarea:focus { outline:2px solid #ffb45455; border-color:var(--amber) }
@@ -25,7 +25,7 @@
     font-weight:700; cursor:pointer; white-space:nowrap }
   button:disabled { opacity:.45; cursor:default }
   .picker-note { color:var(--dim); font-size:.8rem; margin:-.9rem 0 1.4rem; min-height:1.2em }
-  .model-wrap { display:none; grid-column:2 / 3; margin-top:-.25rem }
+  .model-wrap { display:none; grid-column:1 / -1; margin-top:-.25rem }
   .model-wrap.show { display:block }
   .model-wrap input { width:100% }
   .card { background:linear-gradient(145deg,var(--panel),#14141c); border:1px solid var(--line);
@@ -113,12 +113,12 @@
     </div>
     <button id="submitBtn" type="submit">🎬 Riff it</button>
     <div id="modelWrap" class="model-wrap">
-      <input id="orModel" list="orModels" placeholder="OpenRouter model (provider/model)" aria-label="OpenRouter model">
-      <datalist id="orModels"></datalist>
+      <input id="writerModel" list="writerModels" placeholder="Writer model override (blank = provider default)" aria-label="Writer model override">
+      <datalist id="writerModels"></datalist>
     </div>
     <div id="judgeModelWrap" class="model-wrap">
-      <input id="orJudgeModel" list="orJudgeModels" placeholder="OpenRouter judge model (provider/model)" aria-label="OpenRouter judge model">
-      <datalist id="orJudgeModels"></datalist>
+      <input id="judgeModel" list="judgeModels" placeholder="Judge model override (blank = provider default)" aria-label="Judge model override">
+      <datalist id="judgeModels"></datalist>
     </div>
   </form>
   <div id="pickerNote" class="picker-note"></div>
@@ -177,32 +177,41 @@ const providerEl = document.getElementById('provider');
 const judgeProviderEl = document.getElementById('judgeProvider');
 const modelWrap = document.getElementById('modelWrap');
 const judgeModelWrap = document.getElementById('judgeModelWrap');
-const orModelEl = document.getElementById('orModel');
-const orJudgeModelEl = document.getElementById('orJudgeModel');
+const writerModelEl = document.getElementById('writerModel');
+const judgeModelEl = document.getElementById('judgeModel');
+const writerModelsEl = document.getElementById('writerModels');
+const judgeModelsEl = document.getElementById('judgeModels');
 const pickerNote = document.getElementById('pickerNote');
 const writerModelLine = document.getElementById('writerModelLine');
 const writerBaseLine = document.getElementById('writerBaseLine');
 const judgeModelLine = document.getElementById('judgeModelLine');
 const judgeBaseLine = document.getElementById('judgeBaseLine');
-let providers = [], jobs = [], activeId = null, trackToken = 0, orLoaded = false;
+let providers = [], jobs = [], activeId = null, trackToken = 0;
+let modelCatalogs = {}, modelCatalogLoads = {};
+let modelOverrides = {writer: {}, judge: {}};
+let lastWriterProvider = '', lastJudgeProvider = '';
 let logScrollTimer = null, logUserScrolling = false, logProgrammatic = false;
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s == null ? '' : String(s); return d.innerHTML }
 function hostFor(p){ return p.base || '—'; }
+function providerName(id){
+  const label=providerFor(id).label || id || 'provider';
+  return label.split(' (',1)[0];
+}
 function modelFor(providerId, customEl){
+  const entered=(customEl?.value || '').trim();
+  if(entered) return entered;
   const p=providerFor(providerId);
-  if(providerId==='openrouter') return (customEl?.value || '').trim() || 'choose a model';
-  return p.model || 'provider default';
+  if(providerId==='openrouter') return p.model || 'choose a model';
+  return p.model || '.env default';
 }
 function updateModelSummary(){
-  const wp=providerFor(providerEl.value);
-  const judgeId=judgeProviderEl.value || providerEl.value;
-  const jp=providerFor(judgeId);
-  const judgeCustom=judgeProviderEl.value ? orJudgeModelEl : orModelEl;
-  writerModelLine.textContent=modelFor(providerEl.value,orModelEl);
-  writerBaseLine.textContent=hostFor(wp);
-  judgeModelLine.textContent=modelFor(judgeId,judgeCustom);
-  judgeBaseLine.textContent=hostFor(jp);
+  const writerId=providerEl.value;
+  const judgeId=judgeProviderEl.value || writerId;
+  writerModelLine.textContent=modelFor(writerId,writerModelEl);
+  writerBaseLine.textContent=hostFor(providerFor(writerId));
+  judgeModelLine.textContent=modelFor(judgeId,judgeModelEl);
+  judgeBaseLine.textContent=hostFor(providerFor(judgeId));
 }
 // Return a human title; prefers the title-based slug after ingest completes.
 function titleFor(j){
@@ -219,17 +228,83 @@ function ago(t){
 }
 function providerFor(id){ return providers.find(p=>p.id===id) || {}; }
 function inFlightExcept(id){ return jobs.some(j=>j.id!==id && (j.status==='queued'||j.status==='running')) }
-
-async function ensureOpenRouterModels(){
-  if(orLoaded) return;
-  const r=await fetch('/api/providers/openrouter/models');
-  if(!r.ok) throw new Error(await r.text());
-  const models=await r.json();
-  document.getElementById('orModels').innerHTML=models.map(m=>
-    `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
-  document.getElementById('orJudgeModels').innerHTML=models.map(m=>
-    `<option value="${esc(m.id)}">${esc(m.name)}  ctx ${Math.round((m.context_length||0)/1000)}k</option>`).join('');
-  orLoaded=true;
+function updateModelFieldCopy(writerId, judgeId){
+  const writerName=providerName(writerId), judgeName=providerName(judgeId);
+  writerModelEl.placeholder=writerId==='openrouter'
+    ? 'Writer OpenRouter model (provider/model)'
+    : `Writer ${writerName} model override (blank = .env default)`;
+  judgeModelEl.placeholder=judgeId==='openrouter'
+    ? 'Judge OpenRouter model (provider/model)'
+    : `Judge ${judgeName} model override (blank = .env default)`;
+  writerModelEl.setAttribute('aria-label',`${writerName} writer model override`);
+  judgeModelEl.setAttribute('aria-label',`${judgeName} judge model override`);
+}
+function setModelOptions(element, models){
+  element.innerHTML=(models || []).map(m=>{
+    const ctx=m.context_length ? `  ctx ${Math.round(m.context_length/1000)}k` : '';
+    const vision=m.supports_vision===true ? '  multimodal' : '';
+    return `<option value="${esc(m.id)}">${esc(m.name || m.id)}${ctx}${vision}</option>`;
+  }).join('');
+}
+async function ensureProviderModels(providerId){
+  if(!providerId) return [];
+  if(modelCatalogs[providerId]) return modelCatalogs[providerId];
+  if(modelCatalogLoads[providerId]) return modelCatalogLoads[providerId];
+  const endpoint=providerId==='openrouter'
+    ? '/api/providers/openrouter/models'
+    : `/api/providers/${encodeURIComponent(providerId)}/models`;
+  modelCatalogLoads[providerId]=(async()=>{
+    const r=await fetch(endpoint);
+    if(!r.ok) throw new Error(await r.text());
+    const models=await r.json();
+    modelCatalogs[providerId]=models;
+    return models;
+  })();
+  try { return await modelCatalogLoads[providerId]; }
+  finally { delete modelCatalogLoads[providerId]; }
+}
+function syncModelOverrides(){
+  const writerId=providerEl.value;
+  const judgeId=judgeProviderEl.value || writerId;
+  if(lastWriterProvider && lastWriterProvider!==writerId){
+    modelOverrides.writer[lastWriterProvider]=writerModelEl.value.trim();
+  }
+  if(lastJudgeProvider && lastJudgeProvider!==judgeId){
+    modelOverrides.judge[lastJudgeProvider]=judgeModelEl.value.trim();
+  }
+  writerModelEl.value=modelOverrides.writer[writerId] || '';
+  judgeModelEl.value=modelOverrides.judge[judgeId] || '';
+  lastWriterProvider=writerId;
+  lastJudgeProvider=judgeId;
+}
+async function updateProviderUI(){
+  const writerId=providerEl.value;
+  const judgeId=judgeProviderEl.value || writerId;
+  syncModelOverrides();
+  updateModelFieldCopy(writerId,judgeId);
+  modelWrap.classList.toggle('show',!!writerId);
+  judgeModelWrap.classList.toggle('show',!!judgeId);
+  updateModelSummary();
+  const roles=[...new Set([writerId,judgeId])];
+  pickerNote.textContent='Loading multimodal model lists…';
+  const results=await Promise.allSettled(roles.map(id=>ensureProviderModels(id)));
+  results.forEach((result,index)=>{
+    if(result.status==='fulfilled'){
+      const id=roles[index];
+      if(id===writerId) setModelOptions(writerModelsEl,result.value);
+      if(id===judgeId) setModelOptions(judgeModelsEl,result.value);
+    }
+  });
+  const failed=results.some(result=>result.status==='rejected');
+  const names=roles.map(providerName).join(' / ');
+  if(failed){
+    pickerNote.textContent=`${names} model list unavailable; type an override. Blank uses the .env default where configured.`;
+  } else if(writerId==='openrouter' || judgeId==='openrouter'){
+    pickerNote.textContent='Showing high-context multimodal models; type any provider/model id. OpenRouter still requires a model unless configured in .env.';
+  } else {
+    pickerNote.textContent=`Showing ${names} multimodal models; blank writer/judge fields use the provider .env defaults.`;
+  }
+  updateModelSummary();
 }
 async function loadProviders(){
   const r=await fetch('/api/providers');
@@ -239,33 +314,18 @@ async function loadProviders(){
   providerEl.innerHTML=opts;
   judgeProviderEl.innerHTML='<option value="">Judge = same as writer</option>'+opts;
   providerEl.value='hyper';
-  updateProviderUI();
-}
-async function updateProviderUI(){
-  const isOr=providerEl.value==='openrouter';
-  const judgeId=judgeProviderEl.value || providerEl.value;
-  const jisOr=judgeId==='openrouter';
-  modelWrap.classList.toggle('show',isOr);
-  judgeModelWrap.classList.toggle('show',jisOr);
-  updateModelSummary();
-  pickerNote.textContent=(isOr || jisOr)
-    ? 'Choose an OpenRouter model when that role is set to OpenRouter.'
-    : 'Writer and Judge models use the selected provider defaults unless explicitly overridden.';
-  if(isOr || jisOr){
-    try {
-      pickerNote.textContent='Loading OpenRouter models…';
-      await ensureOpenRouterModels();
-      pickerNote.textContent='Choose an OpenRouter model, or type a provider/model id.';
-    } catch(e) {
-      pickerNote.textContent='OpenRouter model list unavailable; type a provider/model id.';
-    }
-  }
-  updateModelSummary();
+  await updateProviderUI();
 }
 providerEl.addEventListener('change',updateProviderUI);
 judgeProviderEl.addEventListener('change',updateProviderUI);
-orModelEl.addEventListener('input',updateModelSummary);
-orJudgeModelEl.addEventListener('input',updateModelSummary);
+writerModelEl.addEventListener('input',()=>{
+  modelOverrides.writer[providerEl.value]=writerModelEl.value;
+  updateModelSummary();
+});
+judgeModelEl.addEventListener('input',()=>{
+  modelOverrides.judge[judgeProviderEl.value || providerEl.value]=judgeModelEl.value;
+  updateModelSummary();
+});
 
 async function loadHistory(autoTrack=true){
   const r=await fetch('/api/jobs'); if(!r.ok) return;
@@ -295,11 +355,11 @@ document.getElementById('f').addEventListener('submit',async e=>{
   e.preventDefault();
   const src=document.getElementById('src').value.trim(), provider=providerEl.value;
   const body={url:src,provider};
-  if(provider==='openrouter' && orModelEl.value.trim()) body.model=orModelEl.value.trim();
-  // optional judge override
+  if(writerModelEl.value.trim()) body.model=writerModelEl.value.trim();
+  // optional judge override; a blank provider means same provider as writer.
   const jp=judgeProviderEl.value;
   if(jp){ body.judge_provider=jp; }
-  if(jp==='openrouter' && orJudgeModelEl.value.trim()) body.judge_model=orJudgeModelEl.value.trim();
+  if(judgeModelEl.value.trim()) body.judge_model=judgeModelEl.value.trim();
   const dens=parseInt(document.getElementById('riffDensity').value,10);
   if(!Number.isNaN(dens) && dens!==2) body.riff_density_bias=dens;  // skip when default
   const btn=document.getElementById('submitBtn'); btn.disabled=true;

@@ -285,6 +285,17 @@ def openrouter_model_list():
         raise HTTPException(502, f"could not load OpenRouter models: {exc}")
 
 
+@app.get("/api/providers/{provider}/models")
+def provider_model_list(provider: str):
+    if provider not in {"hyper", "neuralwatt", "openrouter"}:
+        raise HTTPException(404, "unknown provider")
+    from mst3k import providers
+    try:
+        return providers.provider_models(provider)
+    except Exception as exc:
+        raise HTTPException(502, f"could not load {provider} models: {exc}")
+
+
 @app.post("/api/jobs")
 async def create_job(req: Request):
     body = await req.json()
