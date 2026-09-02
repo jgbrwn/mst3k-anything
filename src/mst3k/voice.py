@@ -91,6 +91,11 @@ def _prepared_voice(job: dict):
                                   job["pocket_tts"])
 
 
+def prepare_configured_voice(job: dict):
+    """Validate and precompute the configured custom voice before media work."""
+    return _prepared_voice(job)
+
+
 def _cache_key(line: str, voice_name: str, voice: dict | None = None,
                job: dict | None = None) -> str:
     voice = voice or {}

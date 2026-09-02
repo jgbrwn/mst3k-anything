@@ -281,7 +281,8 @@ frames/, frames_policy.json, context_frames_policy.json
 profile.json, profile_policy.json
 gaps.json, gaps_policy.json, audio_windows.json, cuts.json
 bundles.json, drafts.json, drafts_policy.json, judged_riffs.json
-tts/, theater.png or theater_anim.webm
+tts/, ~/.cache/mst3k-anything/voices/
+theater.png or theater_anim.webm
 final.mp4, riffs.srt, riffs.json
 ```
 
@@ -384,10 +385,13 @@ of its underlying footage.
 - Consume downloaded subtitles when their timing/quality beats ASR.
 - Chunk and merge understanding for feature-length material.
 - Add authentication, rate limiting, job quotas, cleanup, and multiple workers.
-- Keep the current CLI custom-reference workflow, then add a private WebUI voice library:
-  upload/choose a reference, validate format/duration, require a rights/consent
-  acknowledgement, prepare/cache the PocketTTS state, preview the base voice, and expose
-  per-job pitch/rate transforms. Never expose HF tokens through the browser.
+- Keep the current CLI custom-reference workflow, then add a private WebUI voice library.
+  Proposed sequence: (1) upload a short WAV into a private, non-public area; (2) validate
+  size, duration, decodability, and channel/sample-rate normalization; (3) require the
+  user to confirm they have rights/consent; (4) prepare/cache a PocketTTS state and
+  generate a preview; (5) store only a voice ID plus conditioning fingerprint on the
+  job; and (6) expose per-job pitch/rate controls. Never expose HF tokens through the
+  browser, and never place raw reference audio in public artifacts or repository docs.
 - Consider a durable workflow/orchestration layer only if the linear Python pipeline stops
   being sufficient; flue remains an option, not a current dependency.
 - Add browser uploads, gallery/community sharing, and richer job inspection only with

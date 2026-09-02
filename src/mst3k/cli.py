@@ -77,6 +77,13 @@ def cmd_render(args) -> None:
     job_dir = Path(requested_dir).resolve() if requested_dir else job["jobs_dir"] / url_slug
     job_dir.mkdir(parents=True, exist_ok=True)
     job["dir"] = job_dir
+    if job.get("voice_ref"):
+        print("[voice] preparing custom reference...", flush=True)
+        try:
+            prepared = voice.prepare_configured_voice(job)
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"[voice] ready: {prepared}", flush=True)
     artifact_slug = url_slug
     # persist our PID for cancel-from-web killability
     (job_dir / "pid").write_text(str(os.getpid()))
