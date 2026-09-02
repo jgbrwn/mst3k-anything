@@ -28,12 +28,17 @@ voices, and procedural silhouettes are original.
 | M4 comedy loop | ✅ partial | Dense cueing, profile, callbacks, judge/rewrite, causal local evidence, sidechain mix, and overlay exist. |
 | M5 operations | 🔧 in progress | systemd deployment works on this VM; auth, rate limits, packaging, and scaling remain. |
 
-### Current example
+### Current examples
 
-`docs/examples/deadwood-relentless/` contains the latest completed Deadwood run as of
-September 2, 2026: OpenRouter `openai/gpt-5.6-luna`, Relentless density (bias `4`),
-27 planned cues, 27 rendered riffs, and 8 judge rewrites. The source is about 4:50 at
-1280×720. The directory includes the MP4, SRT, final rendered manifest, and a poster.
+`docs/examples/deadwood-relentless/` contains two completed Deadwood runs as of
+September 2, 2026. Both use Relentless density (bias `4`) on the same roughly 4:50,
+1280×720 source:
+
+- Job 62: OpenRouter `openai/gpt-5.6-luna` as writer and judge; 27/27 rendered, 8 judge rewrites.
+- Job 63: OpenRouter `google/gemma-4-31b-it` writer and `x-ai/grok-4.6` judge; 26/27 rendered, 23 judge rewrites (the final cue hit the video boundary).
+
+The directory includes both MP4s, their SRTs, final rendered manifests, posters, and a
+comparison README.
 
 ## 2. Architecture
 
@@ -255,20 +260,17 @@ by default.
 
 ### Informal model observation
 
-This is not a controlled benchmark, but across the multimodal models tested so far the
-working impression is:
+This is not a controlled benchmark. The earlier working impression favored **GPT-5.6
+Luna** (`openai/gpt-5.6-luna`) for writing and joke landing, with **GLM 5.3 Flash**
+(`z-ai/glm-5.3-flash`) next and **Qwen 3.8 Flash**/ **Kimi-k3-fast** generally weaker
+in those runs. The new Deadwood comparison suggests that the **Gemma 4 31B writer +
+Grok 4.6 judge** pairing can be roughly on par with Luna on this source, so the result
+is better described as a model-pair observation than a strict ranking.
 
-1. **GPT-5.6 Luna** (`openai/gpt-5.6-luna`) — strongest writing and joke landing;
-2. **GLM 5.3 Flash** (`z-ai/glm-5.3-flash`) — second-best overall impression, with
-   extra structured-output handling needed;
-3. **Qwen 3.8 Flash** (`qwen3.8-flash`) and **Kimi-k3-fast** — useful, fast/cheap
-   alternatives but generally weaker comic turns and landings in these runs.
-
-Job 62 is the current Luna example: 27/27 planned cues rendered and eight judge
-rewrites. These observations can change with prompt/cache state and source material.
-A future fixed-clip A/B benchmark should record human ratings, judge scores, rewrite/drop
-rates, causal-reference errors, latency, and cost before treating the ordering as a
-measurement.
+Job 62 is the Luna reference (27/27 rendered, 8 judge rewrites); Job 63 is the Gemma/Grok
+reference (26/27 rendered, 23 judge rewrites). A future fixed-clip A/B benchmark should
+record human ratings, judge scores, rewrite/drop rates, causal-reference errors, latency,
+and cost before treating any ordering as a measurement.
 
 ## 5. Cache and reliability model
 

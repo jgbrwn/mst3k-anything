@@ -1,0 +1,436 @@
+[
+  {
+    "gap": 1,
+    "speaker": "riffer",
+    "line": "The suspense of the *blank* is killing me.",
+    "words": 8,
+    "when": 0.35,
+    "start": 8.659,
+    "duration": 2.453917,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:setup:0",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 2,
+    "speaker": "riffer",
+    "line": "Riveting. A *snowy* road and a car.",
+    "words": 7,
+    "when": 0.35,
+    "start": 19.278,
+    "duration": 2.68925,
+    "timing": "cue",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "frame:mid",
+      "transcript:12.5s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 3,
+    "speaker": "riffer",
+    "line": "A floating head for a welcoming committee.",
+    "words": 7,
+    "when": 0.35,
+    "start": 29.896,
+    "duration": 2.245083,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid at 29.55s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 4,
+    "speaker": "riffer",
+    "line": "The *rush* of a twenty-five mile per hour zone...",
+    "words": 9,
+    "when": 0.35,
+    "start": 35.95,
+    "duration": 3.236292,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 5,
+    "speaker": "riffer",
+    "line": "A *very* loose parade...",
+    "words": 4,
+    "when": 0.35,
+    "start": 56.577,
+    "duration": 2.021,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "transcript:48.3s",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 6,
+    "speaker": "riffer",
+    "line": "The trolley is the *main* float.",
+    "words": 6,
+    "when": 0.35,
+    "start": 65.95,
+    "duration": 1.533542,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid",
+      "transcript:57.0s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 7,
+    "speaker": "riffer",
+    "line": "A *thrilling* cluster of ten people on a sidewalk... really captures the scale of this parade.",
+    "words": 16,
+    "when": 0.35,
+    "start": 71.295,
+    "duration": 4.967708,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:mid",
+      "transcript:53.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 8,
+    "speaker": "riffer",
+    "line": "Three red lights just to make *sure* that police SUV gets through.",
+    "words": 12,
+    "when": 0.4,
+    "start": 82.453,
+    "duration": 3.710792,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 9,
+    "speaker": "riffer",
+    "line": "And here's the *final* parade float",
+    "words": 6,
+    "when": 0.35,
+    "start": 94.75,
+    "duration": 1.904083,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "target-1"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 10,
+    "speaker": "riffer",
+    "line": "Green light... and the man in the green jacket *finally* commits.",
+    "words": 11,
+    "when": 0.35,
+    "start": 100.017,
+    "duration": 3.710792,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 11,
+    "speaker": "riffer",
+    "line": "Patiently guarding the trucks...",
+    "words": 4,
+    "when": 0.35,
+    "start": 119.95,
+    "duration": 1.609083,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:109.5s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 12,
+    "speaker": "riffer",
+    "line": "Intense dashboard *action* here.",
+    "words": 4,
+    "when": 0.35,
+    "start": 127.15,
+    "duration": 2.324042,
+    "timing": "cue",
+    "mechanism": "production_critique",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 13,
+    "speaker": "riffer",
+    "line": "That yellow sign is *optimistic* for this weather.",
+    "words": 8,
+    "when": 0.35,
+    "start": 136.08,
+    "duration": 3.631625,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:pre at 133.23s",
+      "visual_motifs:winter-scenery"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 14,
+    "speaker": "riffer",
+    "line": "...very *thrilling* slushy intersection.",
+    "words": 4,
+    "when": 0.35,
+    "start": 146.699,
+    "duration": 2.139417,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "transcript:143.1s",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 15,
+    "speaker": "riffer",
+    "line": "Twenty-seven miles per hour. Truly *living* on the edge.",
+    "words": 9,
+    "when": 0.4,
+    "start": 157.367,
+    "duration": 4.492958,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "frame:pre"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 16,
+    "speaker": "riffer",
+    "line": "Nothing says *old town vibe* like a row of late-model SUVs...",
+    "words": 11,
+    "when": 0.35,
+    "start": 167.936,
+    "duration": 4.321333,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:161.3s",
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 17,
+    "speaker": "riffer",
+    "line": "A lot of... *cones*? That's the big reveal?",
+    "words": 8,
+    "when": 0.35,
+    "start": 178.554,
+    "duration": 4.412667,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:setup:0",
+      "frame:pre at 175.7s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 18,
+    "speaker": "riffer",
+    "line": "A *murder murdering* over a pair of eights... the stakes are just too high.",
+    "words": 14,
+    "when": 0.35,
+    "start": 189.173,
+    "duration": 4.260625,
+    "timing": "cue",
+    "mechanism": "wordplay",
+    "evidence": [
+      "transcript:175.0s",
+      "transcript:183.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 19,
+    "speaker": "riffer",
+    "line": "And the red truck *definitely* didn't like it.",
+    "words": 8,
+    "when": 0.4,
+    "start": 199.841,
+    "duration": 2.394208,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:194.2s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 20,
+    "speaker": "riffer",
+    "line": "He's describing his driving like it's a *legal* deposition.",
+    "words": 9,
+    "when": 0.35,
+    "start": 210.409,
+    "duration": 2.710833,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "transcript:206.4s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 21,
+    "speaker": "riffer",
+    "line": "A *manner* that looks like a slow crawl past a hotel...",
+    "words": 11,
+    "when": 0.35,
+    "start": 221.028,
+    "duration": 2.771375,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:204.6s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 22,
+    "speaker": "riffer",
+    "line": "The 'maybe' is doing a lot of heavy lifting there.",
+    "words": 10,
+    "when": 0.35,
+    "start": 231.646,
+    "duration": 2.781333,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:224.2s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 23,
+    "speaker": "riffer",
+    "line": "From *apologetic* to biohazard in six seconds.",
+    "words": 7,
+    "when": 0.4,
+    "start": 242.315,
+    "duration": 2.711792,
+    "timing": "cue",
+    "mechanism": "escalation",
+    "evidence": [
+      "transcript:224.2s",
+      "transcript:234.7s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 24,
+    "speaker": "riffer",
+    "line": "A 35-mph hill... right past the *filthy* lot.",
+    "words": 8,
+    "when": 0.35,
+    "start": 252.883,
+    "duration": 3.631625,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:0"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 25,
+    "speaker": "riffer",
+    "line": "Another *exciting* landmark... the metal rail.",
+    "words": 6,
+    "when": 0.35,
+    "start": 263.502,
+    "duration": 2.709417,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "running-gags:excitement-irony"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 26,
+    "speaker": "riffer",
+    "line": "Just some orange poles and *existential* dread.",
+    "words": 7,
+    "when": 0.35,
+    "start": 277.15,
+    "duration": 3.788875,
+    "timing": "cue",
+    "mechanism": "escalation",
+    "evidence": [
+      "frame:mid",
+      "transcript:274.1s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  }
+]

@@ -20,22 +20,23 @@ side-by-side comparison handle.
 
 ## Example output
 
-[![Deadwood Relentless example](docs/examples/deadwood-relentless/poster.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-riffed.mp4)
+[![Deadwood Relentless — Luna](docs/examples/deadwood-relentless/poster.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-riffed.mp4)
+[![Deadwood Relentless — Gemma + Grok](docs/examples/deadwood-relentless/poster-gemma31b-grok46.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-gemma31b-grok46-riffed.mp4)
 
-The [`Deadwood` Relentless example](docs/examples/deadwood-relentless/) is a complete
-4:50 run using density bias `4`: 27 planned cues, 27 rendered riffs, and 8 judge
-rewrites. The generated MP4, SRT, and final `riffs.json` manifest are included for
-inspection and download.
+The [`Deadwood` Relentless comparison](docs/examples/deadwood-relentless/) contains two
+complete 4:50 runs using density bias `4`. The Luna pair rendered 27/27 riffs; the
+Gemma 31B writer + Grok 4.6 judge pair rendered 26/27 because its final cue reached the
+video boundary. Both MP4s, SRTs, and final `riffs.json` manifests are included.
 
 ## Informal model notes
 
-From the multimodal models tested so far, the working impression is that **GPT-5.6
-Luna** (`openai/gpt-5.6-luna`, via OpenRouter) writes the strongest lines and lands
-jokes most reliably. **GLM-5.3 Flash** (`z-ai/glm-5.3-flash`) has been second-best
-overall, while **Qwen 3.8 Flash** and **Kimi-k3-fast** have been useful but generally
-weaker on comic turns and timing. This is an informal observation from our runs, not a
-controlled benchmark; model choice, prompt/cache state, and source material can change
-the result.
+The first informal impression favored **GPT-5.6 Luna** (`openai/gpt-5.6-luna`) for
+writing and joke landing, with **GLM-5.3 Flash** (`z-ai/glm-5.3-flash`) next and **Qwen
+3.8 Flash** / **Kimi-k3-fast** generally weaker in those runs. The new Deadwood
+comparison suggests the **Gemma 4 31B writer + Grok 4.6 judge** pairing can be roughly
+on par with Luna on this source, so this is not a strict model ranking. It is an
+informal observation, not a controlled benchmark; model pair, prompt/cache state, and
+source material can change the result.
 
 ## Highlights
 
