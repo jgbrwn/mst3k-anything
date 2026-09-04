@@ -11,8 +11,8 @@ figures out what's on screen and what led into each cue, asks an LLM to write
 context-specific jokes and callbacks, synthesizes them with PocketTTS in two voices,
 sidechain-ducks the original audio, and mixes the riffs in. Dialogue overlap is an
 intentional option; timing windows guide the landing rather than vetoing a good joke.
-You watch the finished result in a synchronized original-versus-riffed player with a
-side-by-side comparison handle.
+For new users, start with the **[installation guide](docs/INSTALL.md)**; it covers Linux,
+macOS, and Windows from prerequisite installation through the first WebUI job.
 
 ![current provider picker — multimodal model catalogs for writer and judge](docs/shots/ui-providers.png)
 
@@ -83,42 +83,73 @@ source material can change the result.
 | Voices | PocketTTS | built-in voices (alba/jane) by default; optional CLI custom reference conditioning via `VOICE_REF` |
 | Mix | ffmpeg sidechaincompress + overlay | animated theater via static PNG (default) |
 | Service | FastAPI + uvicorn + SQLite | the web UI / job queue |
+| Setup | Python installer/doctor/start scripts | Linux, macOS, and Windows |
 
-## Quick start
+## Quick start — Linux, macOS, or Windows
+
+For a copy-and-paste setup, use the **[complete installation guide](docs/INSTALL.md)**.
+The short version is:
+
+1. Install `ffmpeg`/`ffprobe` using your OS package manager.
+2. Clone or download this repository.
+3. Run the installer; it creates the three Python environments, installs dependencies,
+   downloads the Parakeet ASR model, and creates `.env`:
 
 ```bash
-# prerequisites: ffmpeg, yt-dlp, an ASR model (see docs/PLAN.md)
-python3 -m venv web-venv
-web-venv/bin/pip install fastapi uvicorn
-uv venv asr-venv && uv pip install --python asr-venv/bin/python sherpa-onnx numpy
-uv venv tts-venv && uv pip install --python tts-venv/bin/python pocket-tts
-# Put Parakeet files at models/parakeet-ctc/model.int8.onnx and tokens.txt.
+# Linux/macOS
+./scripts/install.sh
 
-# configure a provider (or use the WebUI picker)
-cp .env.example .env
-# edit .env and add the provider API key/model
-
-PYTHONPATH=src python -m mst3k.cli render "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
+# Windows PowerShell (use a process-only policy change if needed)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\install.ps1
 ```
+
+4. Enter one Hyper, Neuralwatt, or OpenRouter API key when prompted. To configure later,
+   run `python3 scripts/configure.py` (Linux/macOS) or `py -3 scripts/configure.py`
+   (Windows). Keys stay in the local `.env` and are never sent through the browser.
+5. Check the setup and start the WebUI:
+
+```bash
+# Linux/macOS
+python3 scripts/doctor.py --strict
+./scripts/start.sh
+
+# Windows PowerShell
+py -3 scripts/doctor.py --strict
+.\scripts\start.ps1
+```
+
+Open **http://127.0.0.1:8000**, choose a provider/model, paste a video URL, and submit.
+The WebUI accepts YouTube, archive.org, other yt-dlp-supported URLs, direct video-file
+URLs, and local video paths. If port 8000 is busy, use `./scripts/start.sh --port 8765`
+or `.\scripts\start.ps1 --port 8765`.
+
+The installer is the supported path for new users; it does not require `uv`, Docker, a
+GPU, or manual virtual-environment activation. See [`docs/INSTALL.md`](docs/INSTALL.md)
+for prerequisites, troubleshooting, CLI usage, custom paths, and the Linux-only systemd
+notes.
+
 
 ### Optional custom voice (CLI/global configuration for now)
 
-PocketTTS voice cloning is not exposed in the WebUI yet, but the CLI can use a local,
-consented reference recording through `VOICE_REF`. The gated [PocketTTS model
-page](https://huggingface.co/kyutai/pocket-tts) is CC-BY-4.0 and requires accepting its
-current access/acceptable-use conditions, including the requested contact-information
-sharing and explicit lawful consent for voice cloning. Before the first clone, sign in
-there and authenticate the environment that owns `pocket-tts`:
+Before the first custom voice export, sign in to the gated [PocketTTS model
+page](https://huggingface.co/kyutai/pocket-tts) if its current access conditions require
+it. Authenticate the environment that owns `pocket-tts`:
 
 ```bash
+# Linux/macOS
 tts-venv/bin/hf auth login
 tts-venv/bin/hf auth whoami
+
+# Windows PowerShell
+tts-venv\Scripts\hf.exe auth login
+tts-venv\Scripts\hf.exe auth whoami
 ```
 
-That is Hugging Face authentication; `uv` created the environment but does not replace
-`hf auth login`. The upstream PocketTTS instructions also show `uvx hf auth login`;
-using the project-local executable keeps the token in the same user-level Hugging Face
-cache. Do not commit the token or put it in `.env`.
+PocketTTS voice cloning is not exposed in the WebUI yet, but the CLI can use a local,
+consented reference recording through `VOICE_REF`. The model page's current access and
+acceptable-use conditions apply, and the reference must be lawfully usable with explicit
+consent for voice conditioning. Do not clone named MST3K performers or characters.
 
 PocketTTS's [`export-voice` command](https://github.com/kyutai-labs/pocket-tts/blob/main/docs/CLI%20Commands/export_voice.md)
 processes the first 30 seconds of the reference and writes a reusable `.safetensors`
@@ -127,13 +158,20 @@ conditioning state, so use a clean, representative sample.
 Precompute a reusable conditioning state:
 
 ```bash
-PYTHONPATH=src python -m mst3k.cli prepare-voice \
+# Linux/macOS
+PYTHONPATH=src web-venv/bin/python -m mst3k.cli prepare-voice \
   /absolute/path/to/consented-reference.wav \
   --out /absolute/path/to/my-riffer.safetensors
+
+# Windows PowerShell
+$env:PYTHONPATH = "src"
+.\web-venv\Scripts\python.exe -m mst3k.cli prepare-voice `
+  C:\path\to\consented-reference.wav `
+  --out C:\path\to\my-riffer.safetensors
 ```
 
 Then set `VOICE_REF` in `.env` to either that `.safetensors` file or the original WAV
-(the latter is exported automatically to the local voice cache on first CLI render):
+(the latter is exported automatically to the platform cache on first CLI render):
 
 ```bash
 VOICE_REF=/absolute/path/to/my-riffer.safetensors
@@ -152,9 +190,10 @@ based. For a one-off CLI render, the same settings are available as `--voice-ref
 consent, previews, and per-job voice controls are planned rather than implemented.
 
 
-The web service runs under systemd (see `deploy/mst3k-anything.service`). The CLI
-also works directly; the repository is not currently packaged as an installable
-console script.
+The hosted demo uses systemd (see `deploy/mst3k-anything.service`), but local users should
+use `scripts/start.sh`, `scripts/start.ps1`, or `start.cmd`. The service unit contains
+VM-specific paths and is not a portable install recipe. The CLI also works directly;
+the installer and requirements files are the supported dependency setup.
 
 ## Repo layout
 
@@ -162,10 +201,12 @@ console script.
 src/mst3k/        pipeline modules (ingest, analyze, transcribe, context,
                   understand, writer, voice // tts, mix, llm, providers)
 app/              FastAPI service + static UI (index.html)
-deploy/           systemd unit
+scripts/          cross-platform install, doctor, configure, and start helpers
+requirements-*.txt dependency sets for WebUI, ASR, and TTS
+deploy/           VM-specific systemd unit (Linux only)
 demo/, jobs/      runtime artifacts (git-ignored)
 models/           ASR model weights (git-ignored)
-docs/             PLAN, README shots, and the completed Deadwood example
+docs/             INSTALL, PLAN, README shots, and the completed Deadwood example
 ```
 
 ## License

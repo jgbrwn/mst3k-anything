@@ -1,0 +1,3 @@
+# CPU ASR environment
+numpy>=2,<3
+sherpa-onnx>=1.13,<2

@@ -11,6 +11,7 @@ import os
 import queue
 import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 import traceback
@@ -177,11 +178,6 @@ async def run_job(jid: int) -> None:
     work_dir.mkdir(parents=True, exist_ok=True)
     logpath = work_dir / "run.log"
     env = dict(os.environ)
-    user_bin = Path.home() / ".local" / "bin"
-    if user_bin.exists():
-        path = env.get("PATH", "")
-        if str(user_bin) not in path:
-            env["PATH"] = f"{user_bin}{os.pathsep}{path}"
     env["PYTHONPATH"] = str(ROOT / "src")
     env["MST3K_JOB_DIR"] = str(work_dir)
     if row["provider"]:
@@ -198,9 +194,13 @@ async def run_job(jid: int) -> None:
     rc = -1
     try:
         with open(logpath, "w") as log:
+            kwargs = {"stdout": log, "stderr": asyncio.subprocess.STDOUT, "env": env}
+            if os.name == "nt":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            else:
+                kwargs["start_new_session"] = True
             p = await asyncio.create_subprocess_exec(
-                PE, "-m", "mst3k.cli", "render", row["source"],
-                stdout=log, stderr=asyncio.subprocess.STDOUT, env=env)
+                PE, "-m", "mst3k.cli", "render", row["source"], **kwargs)
             _set(jid, process_pid=p.pid)
             rc = await p.wait()
             _set(jid, process_pid=None)
@@ -271,7 +271,10 @@ def provider_list():
         result.append({"id": pid,
                        "label": f"{label} ({model})" if model else label,
                        "model": model, "base": base})
-    return {"providers": result}
+    default_provider = CFG.get("default_provider", "hyper")
+    if default_provider not in {item["id"] for item in result}:
+        default_provider = "hyper"
+    return {"providers": result, "default_provider": default_provider}
 
 
 @app.get("/api/providers/openrouter/models")
@@ -302,7 +305,7 @@ async def create_job(req: Request):
     src = (body.get("url") or body.get("source") or "").strip()
     if not src:
         raise HTTPException(400, "url is required")
-    provider = body.get("provider") or "hyper"
+    provider = body.get("provider") or CFG.get("default_provider") or "hyper"
     allowed = {"hyper", "neuralwatt", "openrouter"}
     if provider not in allowed:
         raise HTTPException(400, "provider must be hyper, neuralwatt, or openrouter")
@@ -501,8 +504,23 @@ def _pid_for_row(row) -> int | None:
     pid = _raw_pid_for_row(row)
     if not pid:
         return None
+    # The API owns process_pid for current rows. On Windows there is no /proc;
+    # a live PID is sufficient because restart recovery clears stale values.
+    if os.name == "nt":
+        try:
+            os.kill(pid, 0)
+            return pid
+        except (ProcessLookupError, PermissionError, OSError):
+            return None
     try:
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\\0", b" ")
+        proc_cmdline = Path(f"/proc/{pid}/cmdline")
+        if proc_cmdline.exists():
+            cmdline = proc_cmdline.read_bytes().replace(b"\\0", b" ")
+        else:
+            # macOS and other POSIX systems do not provide Linux's /proc.
+            probe = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                                   capture_output=True, text=True, check=False)
+            cmdline = probe.stdout.encode()
         if b"mst3k.cli" not in cmdline:
             return None
         return pid
@@ -516,6 +534,8 @@ def _group_alive(row) -> bool:
         return False
     if not row["process_pid"] and not _pid_for_row(row):
         return False
+    if os.name == "nt":
+        return _pid_for_row(row) is not None
     try:
         os.killpg(pid, 0)
         return True
@@ -539,6 +559,12 @@ def _signal_row(row, sig) -> bool:
     # the command-line check before we risk signaling a stale process group.
     if not row["process_pid"] and not _pid_for_row(row):
         return False
+    if os.name == "nt":
+        # taskkill /T includes ffmpeg and PocketTTS descendants. The API has
+        # already isolated this child with CREATE_NEW_PROCESS_GROUP.
+        result = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                                capture_output=True, text=True, check=False)
+        return result.returncode == 0
     try:
         os.killpg(pid, sig)
         return True

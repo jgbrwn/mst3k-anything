@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import config
 from .cache import file_signature, value_digest
 
 VOICE_CACHE_VERSION = 1
@@ -85,8 +86,7 @@ def _prepared_voice(job: dict):
     key = value_digest({"version": VOICE_CACHE_VERSION, "source": source_text,
                         "signature": signature})[:20]
     stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", Path(source_text).stem).strip("-") or "voice"
-    cache_dir = Path(job.get("voice_cache_dir") or
-                     (Path.home() / ".cache" / "mst3k-anything" / "voices"))
+    cache_dir = Path(job.get("voice_cache_dir") or config.cache_dir())
     return prepare_voice_reference(source, cache_dir / f"{stem}-{key}.safetensors",
                                   job["pocket_tts"])
 
@@ -217,7 +217,7 @@ def synthesize(job: dict, riff: dict) -> dict:
         if not out.exists():
             tmp = cache / f"{key}_final.tmp.wav"
             tmp.unlink(missing_ok=True)
-            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(wav),
+            subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-i", str(wav),
                             "-af", ",".join(af), str(tmp)], check=True)
             if probe_duration(tmp) <= 0:
                 tmp.unlink(missing_ok=True)
@@ -249,7 +249,7 @@ def hint_filters(line: str) -> list:
 
 
 def probe_duration(path: Path) -> float:
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+    r = subprocess.run([config.tool("ffprobe"), "-v", "error", "-show_entries",
                         "format=duration", "-of", "csv=p=0", str(path)],
                        capture_output=True, text=True)
     try:

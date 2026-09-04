@@ -11,6 +11,8 @@ import subprocess
 import zlib
 from pathlib import Path
 
+from . import config
+
 
 def _chunk(tag: bytes, data: bytes) -> bytes:
     c = struct.pack(">I", len(data)) + tag + data
@@ -87,7 +89,7 @@ def make_animated_theater(job: dict, video_out: Path, frames: int = 16,
     for i in range(frames):
         _draw(d / f"f{i:03d}.png", width, H, i / frames)
     subprocess.run([
-        "ffmpeg", "-y", "-v", "error",
+        config.tool("ffmpeg"), "-y", "-v", "error",
         "-framerate", str(max(1, frames // 2)),  # slow bob (≈0.5 Hz per cycle)
         "-i", str(d / "f%03d.png"),
         "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-auto-alt-ref", "0",

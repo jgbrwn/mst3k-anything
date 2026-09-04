@@ -4,13 +4,13 @@ Runs in the asr-venv (has sherpa-onnx + numpy). Emits transcript.json:
 {"lines": [{"start": s, "end": e, "text": "..."}], "words": [...]}
 """
 import json
-from pathlib import Path
 import signal
 import subprocess
 import wave
+from pathlib import Path
 
-ASR_VENV = Path(__file__).resolve().parents[2] / "asr-venv"
-MODEL_DIR = Path(__file__).resolve().parents[2] / "models" / "parakeet-ctc"
+from . import config
+
 ASR_CHUNK_SECONDS = 60
 TRANSCRIPT_POLICY_VERSION = 2
 
@@ -19,7 +19,7 @@ import json, os, sys, wave
 import sherpa_onnx
 import numpy as np
 
-audio, out, start_sec, end_sec = sys.argv[1:5]
+audio, out, start_sec, end_sec, model_dir = sys.argv[1:6]
 start_sec, end_sec = float(start_sec), float(end_sec)
 with wave.open(audio, "rb") as wf:
     sample_rate = wf.getframerate()
@@ -32,7 +32,8 @@ with wave.open(audio, "rb") as wf:
                             dtype=np.int16).astype(np.float32) / 32768.0
 
 rec = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
-    model="MODEL/model.int8.onnx", tokens="MODEL/tokens.txt",
+    model=os.path.join(model_dir, "model.int8.onnx"),
+    tokens=os.path.join(model_dir, "tokens.txt"),
     num_threads=2, sample_rate=sample_rate, feature_dim=80,
     decoding_method="greedy_search", debug=False)
 s = rec.create_stream()
@@ -119,7 +120,14 @@ def transcribe(job: dict) -> dict:
         return out
     if audio is None:
         raise RuntimeError("ASR audio is unavailable")
-    script = _RUNNER.replace("MODEL", str(MODEL_DIR))
+    model_dir = Path(job.get("model_dir") or config.model_dir())
+    model_file = model_dir / "model.int8.onnx"
+    tokens_file = model_dir / "tokens.txt"
+    if not model_file.is_file() or not tokens_file.is_file():
+        raise RuntimeError(
+            "Parakeet model is missing. Run `python scripts/install.py` or place "
+            f"model.int8.onnx and tokens.txt in {model_dir}.")
+    script = _RUNNER
     runner = job["dir"] / "_asr_run.py"
     runner.write_text(script)
 
@@ -157,8 +165,9 @@ def transcribe(job: dict) -> dict:
                   f"({start:.0f}-{end:.0f}s)", flush=True)
             try:
                 subprocess.run([
-                    str(ASR_VENV / "bin" / "python"), str(runner),
-                    str(audio), str(raw_path), str(start), str(end)],
+                    str(job.get("asr_python") or config.venv_python("asr-venv")),
+                    str(runner), str(audio), str(raw_path), str(start), str(end),
+                    str(model_dir)],
                     check=True)
             except subprocess.CalledProcessError as exc:
                 raise _chunk_error(exc, index + 1, total) from exc

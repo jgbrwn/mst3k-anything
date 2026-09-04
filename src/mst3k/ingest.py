@@ -8,8 +8,12 @@ import json
 import re
 import subprocess
 import urllib.request
+from fractions import Fraction
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import url2pathname
+
+from . import config
 
 VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v", ".flv", ".ogv"}
 MAX_SECONDS = 9000  # 2.5h cap
@@ -51,7 +55,7 @@ def _has_extractor(url: str) -> bool:
 
 
 def _probe(path: Path) -> dict:
-    r = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json",
+    r = subprocess.run([config.tool("ffprobe"), "-v", "error", "-print_format", "json",
                         "-show_format", "-show_streams", str(path)],
                        capture_output=True, text=True, check=True)
     info = json.loads(r.stdout)
@@ -61,7 +65,8 @@ def _probe(path: Path) -> dict:
         "duration": float(fmt.get("duration", 0)),
         "width": int(v.get("width", 0)),
         "height": int(v.get("height", 0)),
-        "fps": eval(v.get("r_frame_rate", "30/1")) if v.get("r_frame_rate") else 30.0,
+        "fps": float(Fraction(v.get("r_frame_rate", "30/1")))
+                if v.get("r_frame_rate") else 30.0,
         "has_audio": any(s.get("codec_type") == "audio" for s in info.get("streams", [])),
         "title": fmt.get("tags", {}).get("title", ""),
         "size_bytes": int(fmt.get("size", 0)),
@@ -91,7 +96,7 @@ def _normalize(job: dict, src: Path) -> tuple[Path, dict]:
         except OSError:
             import shutil; shutil.copy2(src, out)
         return out, meta
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src),
+    subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-i", str(src),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                     "-c:a", "aac", str(out)], check=True)
     return out, _probe(out)
@@ -114,9 +119,8 @@ def _dl(url: str, dest: Path) -> Path:
 
 
 def _ytdlp_bin() -> str:
-    """Prefer ~/.local/bin/yt-dlp (recent) over system yt-dlp."""
-    local = Path.home() / ".local" / "bin" / "yt-dlp"
-    return str(local) if local.exists() else "yt-dlp"
+    """Resolve yt-dlp from the configured path, project venv, or PATH."""
+    return config.tool("yt-dlp")
 
 
 def _ytdlp(url: str, job: dict) -> tuple[Path, dict]:
@@ -159,7 +163,11 @@ def ingest(source: str, job: dict) -> tuple[Path, dict]:
     d.mkdir(parents=True, exist_ok=True)
     p = urlparse(source)
 
-    if p.scheme in ("", "file") or Path(source).exists():
+    if p.scheme == "file":
+        src = Path(url2pathname(p.path)).resolve()
+        vid, meta = _normalize(job, src)
+        meta.update({"kind_hint": "local", "description": "", "uploader": ""})
+    elif p.scheme == "" and Path(source).exists():
         src = Path(source).resolve()
         vid, meta = _normalize(job, src)
         meta.update({"kind_hint": "local", "description": "", "uploader": ""})

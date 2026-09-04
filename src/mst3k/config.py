@@ -1,16 +1,123 @@
-"""Config: defaults + .env overrides. All LLM/TTS/media knobs in one place."""
+"""Config: defaults, .env overrides, and cross-platform tool resolution."""
 import os
+import shutil
+import sys
 from pathlib import Path
 
 from .llm import load_env
 
 BASE = Path(__file__).resolve().parents[2]
 
+
+def _is_placeholder(value: str | None) -> bool:
+    return not value or (value.startswith("<") and value.endswith(">"))
+
+
+def _path(value: str | Path | None, default: Path) -> Path:
+    raw = str(value).strip() if value is not None else ""
+    if _is_placeholder(raw):
+        return default
+    result = Path(raw).expanduser()
+    return result if result.is_absolute() else BASE / result
+
+
+def _executable_value(value: str) -> str:
+    """Resolve a configured path relative to the project, preserving bare commands."""
+    raw = str(value).strip()
+    if "/" not in raw and "\\" not in raw:
+        return raw
+    path = Path(raw).expanduser()
+    return str(path if path.is_absolute() else BASE / path)
+
+
+def _venv_bin(venv_name: str) -> Path:
+    return BASE / venv_name / ("Scripts" if os.name == "nt" else "bin")
+
+
+def venv_python(venv_name: str) -> str:
+    """Return a platform-correct Python executable from a project venv."""
+    override_keys = {
+        "asr-venv": ("MST3K_ASR_PYTHON", "ASR_PYTHON"),
+        "tts-venv": ("MST3K_TTS_PYTHON", "TTS_PYTHON"),
+        "web-venv": ("MST3K_WEB_PYTHON", "WEB_PYTHON"),
+        ".venv": ("MST3K_PYTHON",),
+    }
+    env = load_env()
+    for key in override_keys.get(venv_name, ()):
+        value = os.environ.get(key) or env.get(key)
+        if not _is_placeholder(value):
+            return _executable_value(value)
+    exe = "python.exe" if os.name == "nt" else "python"
+    candidate = _venv_bin(venv_name) / exe
+    if candidate.exists():
+        return str(candidate)
+    return sys.executable
+
+
+_TOOL_ENV = {
+    "ffmpeg": ("MST3K_FFMPEG", "FFMPEG_BIN"),
+    "ffprobe": ("MST3K_FFPROBE", "FFPROBE_BIN"),
+    "yt-dlp": ("MST3K_YTDLP", "YT_DLP_BIN"),
+    "pocket-tts": ("MST3K_POCKET_TTS", "POCKET_TTS_BIN"),
+}
+
+
+def tool(name: str) -> str:
+    """Resolve a media/tool executable without assuming Unix paths.
+
+    Explicit environment values win, followed by project-local tools/ and the
+    appropriate venv scripts directory, then the user's PATH.
+    """
+    env = load_env()
+    for key in _TOOL_ENV.get(name, ()):
+        value = os.environ.get(key) or env.get(key)
+        if not _is_placeholder(value):
+            return _executable_value(value)
+
+    exe = name + ".exe" if os.name == "nt" else name
+    candidates = [BASE / "tools" / "bin" / exe]
+    if name == "yt-dlp":
+        candidates.append(Path(venv_python("web-venv")).parent / exe)
+        for venv in (".venv", "web-venv"):
+            candidates.append(_venv_bin(venv) / exe)
+    elif name == "pocket-tts":
+        candidates.append(Path(venv_python("tts-venv")).parent / exe)
+        for venv in (".venv", "tts-venv"):
+            candidates.append(_venv_bin(venv) / exe)
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return shutil.which(name) or name
+
+
+def cache_dir() -> Path:
+    """Return the conventional per-user cache location for this OS."""
+    override = os.environ.get("MST3K_VOICE_CACHE_DIR") or load_env().get(
+        "MST3K_VOICE_CACHE_DIR")
+    if override:
+        return _path(override, BASE / "voice-cache")
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA") or
+                    (Path.home() / "AppData" / "Local"))
+        return root / "mst3k-anything" / "voices"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "mst3k-anything" / "voices"
+    return Path.home() / ".cache" / "mst3k-anything" / "voices"
+
+
+def model_dir() -> Path:
+    env = load_env()
+    return _path(os.environ.get("MST3K_MODEL_DIR") or env.get("MST3K_MODEL_DIR"),
+                 BASE / "models" / "parakeet-ctc")
+
+
 DEFAULTS = {
     # paths
     "jobs_dir": BASE / "jobs",
-    "pocket_tts": BASE / "tts-venv/bin/pocket-tts",
-    "voice_cache_dir": Path.home() / ".cache" / "mst3k-anything" / "voices",
+    "model_dir": BASE / "models" / "parakeet-ctc",
+    "pocket_tts": tool("pocket-tts"),
+    "asr_python": venv_python("asr-venv"),
+    "voice_cache_dir": cache_dir(),
     # LLM (swappable via .env). Model fields are EMPTY by default so per-provider
     # defaults kick in when the user picks a non-Hyper provider; setting
     # HYPER/NEURALWATT/OPENROUTER_WRITER_MODEL in .env overrides.
@@ -18,8 +125,9 @@ DEFAULTS = {
     "llm_key": "",
     "llm_model": "",
     "llm_understand_model": "",
+    "default_provider": "hyper",
     # voice lineup (ensemble configuration)
-    "voice_ref": None,          # optional local wav or PocketTTS .safetensors conditioning state
+    "voice_ref": None,          # optional local wav or .safetensors conditioning state
     "voice_rate": 1.0,          # global multiplier on built-in/custom delivery rate
     "voice_pitch": 0.0,         # global semitone offset; pool pitches are added to it
     "voices": [                 # ensemble: Alba default + Jane sidekick
@@ -72,7 +180,20 @@ def load() -> dict:
     cfg = dict(DEFAULTS)
     env = load_env()
 
-    # provider-specific (survives reboot; pdb precedence over tmp files)
+    # Re-resolve paths/tools at runtime so installers and platform overrides take effect.
+    cfg["jobs_dir"] = _path(os.environ.get("MST3K_JOBS_DIR") or
+                             env.get("MST3K_JOBS_DIR") or env.get("JOBS_DIR"),
+                             DEFAULTS["jobs_dir"])
+    cfg["model_dir"] = model_dir()
+    cfg["pocket_tts"] = tool("pocket-tts")
+    cfg["asr_python"] = venv_python("asr-venv")
+    cfg["voice_cache_dir"] = _path(os.environ.get("MST3K_VOICE_CACHE_DIR") or
+                                    env.get("MST3K_VOICE_CACHE_DIR"),
+                                    DEFAULTS["voice_cache_dir"])
+    cfg["default_provider"] = (os.environ.get("MST3K_PROVIDER") or
+                                env.get("MST3K_PROVIDER") or "hyper").strip() or "hyper"
+
+    # provider-specific (survives reboot; per-provider env takes precedence)
     prov_env = [
         ("hyper",   "HYPER_BASE_URL",   "HYPER_API_KEY",   "HYPER_WRITER_MODEL"),
         ("neuralwatt", "NEURALWATT_BASE_URL", "NEURALWATT_API_KEY", "NEURALWATT_WRITER_MODEL"),

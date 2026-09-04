@@ -12,6 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from . import config
 from . import transcribe
 from .cache import file_signature
 
@@ -53,7 +54,7 @@ def grab_context_frames(job: dict, gaps: list[dict],
             frame = frames / f"gap{gap['id']:03d}_{tag}.png"
             if frame.exists():
                 continue
-            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{timestamp:.2f}",
+            subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{timestamp:.2f}",
                             "-i", str(job["source"]), "-frames:v", "1",
                             "-vf", f"scale={job['frame_width']}:-1", str(frame)],
                            check=False)

@@ -14,6 +14,7 @@ import subprocess
 import wave
 from pathlib import Path
 
+from . import config
 from .cache import file_signature
 
 
@@ -26,7 +27,7 @@ DENSITY_MULTIPLIERS = (0.55, 0.78, 1.0, 1.4, 1.8)
 def extract_audio(job: dict) -> Path:
     out = job["dir"] / "audio.wav"
     if not out.exists():
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(job["source"]),
+        subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-i", str(job["source"]),
                         "-vn", "-ac", "1", "-ar", "16000", str(out)], check=True)
     return out
 
@@ -35,7 +36,7 @@ def _seg(job, audio: Path, start: float, end: float) -> Path | None:
     cache = job["dir"] / "segs" / f"{start:.1f}.wav"
     if not cache.exists():
         cache.parent.mkdir(exist_ok=True)
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(start), "-t",
+        subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-ss", str(start), "-t",
                         str(end - start), "-i", str(audio), "-ac", "1", "-ar", "8000",
                         str(cache)], check=True)
     return cache
@@ -45,7 +46,7 @@ def _speech_frac(seg: Path, gate_db: str, min_sil_dur: float, win: float) -> flo
     """Return the fraction above a speech/noise gate for compatibility callers."""
     if win <= 0:
         return 0.0
-    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
+    proc = subprocess.run([config.tool("ffmpeg"), "-i", str(seg), "-af",
                            f"silencedetect=noise={gate_db}:d={min_sil_dur}",
                            "-f", "null", "-"], capture_output=True, text=True)
     starts, ends = [], []
@@ -95,7 +96,7 @@ def _effective_lead(job: dict, duration: float) -> float:
 def _detect_silence(audio: Path, min_gap: float,
                     gate_db: str = "-32dB", min_dur: float = 0.35) -> list[tuple]:
     """Return pauses as a signal, including short and trailing pauses."""
-    proc = subprocess.run(["ffmpeg", "-i", str(audio), "-af",
+    proc = subprocess.run([config.tool("ffmpeg"), "-i", str(audio), "-af",
                            f"silencedetect=noise={gate_db}:d={min_dur}",
                            "-f", "null", "-"], capture_output=True, text=True)
     starts, ends = [], []
@@ -206,7 +207,7 @@ def _detect_quiet_moments(audio: Path, job: dict) -> list[dict]:
 
 
 def _rms_db(seg: Path) -> float | None:
-    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af", "astats=metadata=0", "-f", "null", "-"],
+    proc = subprocess.run([config.tool("ffmpeg"), "-i", str(seg), "-af", "astats=metadata=0", "-f", "null", "-"],
                           capture_output=True, text=True)
     m = re.search(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr)
     return float(m.group(1)) if m else None
@@ -429,7 +430,7 @@ def find_gaps(job: dict) -> list[dict]:
 
 
 def _astats(seg: Path):
-    proc = subprocess.run(["ffmpeg", "-i", str(seg), "-af",
+    proc = subprocess.run([config.tool("ffmpeg"), "-i", str(seg), "-af",
                            "astats=metadata=0", "-f", "null", "-"],
                           capture_output=True, text=True)
     m1, m2 = re.findall(r"RMS level dB:\s*(-?\d+\.\d+)", proc.stderr), \
@@ -461,7 +462,7 @@ def find_cuts(job: dict, max_cuts: int = 400) -> list[float]:
                 return json.loads(cache.read_text())
         except (OSError, json.JSONDecodeError):
             pass
-    proc = subprocess.run(["ffmpeg", "-i", str(job["source"]), "-vf",
+    proc = subprocess.run([config.tool("ffmpeg"), "-i", str(job["source"]), "-vf",
                            "select='gt(scene,0.4)',showinfo", "-f", "null", "-"],
                           capture_output=True, text=True)
     cuts = []
@@ -490,7 +491,7 @@ def _luma_variance(path: Path) -> float:
     """Return grayscale standard deviation from ffmpeg showinfo."""
     if not path.exists():
         return 0.0
-    proc = subprocess.run(["ffmpeg", "-v", "info", "-i", str(path), "-vf",
+    proc = subprocess.run([config.tool("ffmpeg"), "-v", "info", "-i", str(path), "-vf",
                            "scale=64:36,format=gray,showinfo", "-frames:v", "1",
                            "-f", "null", "-"], capture_output=True, text=True)
     m = re.search(r"stdev:\[([\d.]+)", proc.stderr)
@@ -528,14 +529,14 @@ def grab_frames(job: dict, gaps: list[dict]) -> None:
         t = gap.get("anchor", (gap["start"] + gap["end"]) / 2)
         frame = frames / f"gap{gap['id']:03d}.png"
         if not frame.exists():
-            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(t),
+            subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-ss", str(t),
                             "-i", str(job["source"]), "-frames:v", "1",
                             "-vf", f"scale={job['frame_width']}:-1", str(frame)])
     for i in range(10):
         t = dur * (i + 0.5) / 10
         frame = frames / f"ctx{i:02d}.png"
         if not frame.exists():
-            subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(t),
+            subprocess.run([config.tool("ffmpeg"), "-y", "-v", "error", "-ss", str(t),
                             "-i", str(job["source"]), "-frames:v", "1",
                             "-vf", f"scale={job['frame_width']}:-1", str(frame)])
     tmp = marker.with_suffix(".tmp")

@@ -1,0 +1,2 @@
+# CPU TTS environment
+pocket-tts>=3,<4

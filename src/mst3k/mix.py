@@ -2,6 +2,7 @@
 import json
 import subprocess
 
+from . import config
 from .analyze import grab_frames  # noqa: F401  (re-export convenience)
 
 
@@ -42,7 +43,7 @@ def build(job: dict, placements: list[dict]) -> dict:
 
     if not placements:
         # no riffs survived: still ship the overlaid video
-        cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(job["source"])]
+        cmd = [config.tool("ffmpeg"), "-y", "-v", "error", "-i", str(job["source"])]
         if overlay_src:
             # Both overlay variants must be bounded by the source duration.
             # stream_loop=-1 without -shortest makes a static PNG render forever.
@@ -111,7 +112,7 @@ def build(job: dict, placements: list[dict]) -> dict:
         parts.append(f"[0:v][{tidx}:v]overlay=x=(W-w)/2:y=H-h:{overlay_eof}[vout]")
 
     fc = ";".join(parts)
-    cmd = ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", fc]
+    cmd = [config.tool("ffmpeg"), "-y", "-v", "error", *inputs, "-filter_complex", fc]
     if overlay_src:
         cmd += ["-map", "[vout]", "-shortest"]
     else:

@@ -1,6 +1,6 @@
 # mst3k-anything — Architecture & plan
 
-**Status snapshot: September 2, 2026.** This document describes the behavior that is
+**Status snapshot: September 4, 2026.** This document describes the behavior that is
 implemented today and separates it from the remaining roadmap. It is intentionally more
 literal than the original prototype plan: the README and this file should describe the
 same product.
@@ -26,7 +26,7 @@ voices, and procedural silhouettes are original.
 | M2 style framework | ⏳ future | No external-riff distillation job or checked-in `STYLE_GUIDE.md` yet. |
 | M3 service/UI | ✅ mostly complete | FastAPI, SQLite state, one worker, SSE logs, history, player, editor, and rerender. |
 | M4 comedy loop | ✅ partial | Dense cueing, profile, callbacks, judge/rewrite, causal local evidence, sidechain mix, and overlay exist. |
-| M5 operations | 🔧 in progress | systemd deployment works on this VM; auth, rate limits, packaging, and scaling remain. |
+| M5 operations | 🔧 in progress | Cross-platform install/doctor/start helpers and VM systemd deployment work; auth, rate limits, packaging, and scaling remain. |
 
 ### Current examples
 
@@ -299,9 +299,10 @@ speech file. Both are backlog items, not guarantees of the current cache behavio
 
 ## 6. Service and frontend
 
-The service is a single FastAPI application served by uvicorn under
-`deploy/mst3k-anything.service` on port 8000. The frontend is one static vanilla
-HTML/CSS/JavaScript file, not React, Vite, or htmx.
+The service is a single FastAPI application served by uvicorn. New local installations use
+`scripts/start.sh`, `scripts/start.ps1`, or `start.cmd` and listen on `127.0.0.1:8000` by
+default. The hosted VM additionally uses `deploy/mst3k-anything.service` on port 8000.
+The frontend is one static vanilla HTML/CSS/JavaScript file, not React, Vite, or htmx.
 
 Implemented UI behavior:
 
@@ -324,30 +325,34 @@ uses one in-memory worker, so production multi-user scheduling needs a later red
 
 Required local components are:
 
-- ffmpeg, ffprobe, and yt-dlp;
-- a Python environment with FastAPI/uvicorn for the service;
-- `asr-venv` with sherpa-onnx and numpy;
-- `tts-venv` with PocketTTS; and
-- `models/parakeet-ctc/model.int8.onnx` plus `tokens.txt`.
+- ffmpeg and ffprobe;
+- Python 3.10–3.14 (Python 3.12 recommended);
+- the three environments created by `scripts/install.*`:
+  `web-venv` with FastAPI/Uvicorn/yt-dlp, `asr-venv` with sherpa-onnx/NumPy, and
+  `tts-venv` with CPU-first PyTorch/PocketTTS; and
+- the verified `models/parakeet-ctc/model.int8.onnx` plus `tokens.txt` files downloaded
+  by the installer.
 
-The repository is not currently packaged with a console entry point. The direct CLI
-form is:
+The repository is intentionally run from its checkout rather than published as a wheel.
+The direct CLI form is documented in [`docs/INSTALL.md`](INSTALL.md):
 
 ```bash
-PYTHONPATH=src python -m mst3k.cli render \
+PYTHONPATH=src web-venv/bin/python -m mst3k.cli render \
   "https://www.youtube.com/watch?v=VIDEO_ID" --out out/
 ```
 
 Optional custom-reference setup follows the same steps as the README: accept the gated
 conditions on the [PocketTTS model page](https://huggingface.co/kyutai/pocket-tts), run
-`tts-venv/bin/hf auth login` and `tts-venv/bin/hf auth whoami`, then use
+`hf auth login` using the executable in `tts-venv/bin/` or `tts-venv/Scripts/`, then use
 `prepare-voice` or `VOICE_REF`. Authentication is local to the Hugging Face CLI; the
 browser UI must never receive the token.
 
-The service receives provider secrets from `.env`/systemd. Per-job provider and model
+The hosted VM receives provider secrets from `.env`/systemd. Per-job provider and model
 choices are stored in SQLite and passed to the child process through environment
-variables. The VM deployment and exe.dev proxy are working; authentication, rate
-limiting, cleanup policy, and horizontal workers remain operational follow-up work.
+variables. On POSIX systems, job cancellation uses a private process group; on Windows
+it uses `taskkill /T` for the API-owned process tree. The VM deployment and exe.dev proxy
+are working; authentication, rate limiting, cleanup policy, and horizontal workers remain
+operational follow-up work.
 
 ## 8. Style framework and legal boundary
 
@@ -384,7 +389,8 @@ of its underlying footage.
 
 ### M5 — operations and voice workflow (future)
 
-- Add installable packaging and reproducible dependency manifests.
+- ✅ Add cross-platform bootstrap scripts, dependency manifests, a doctor, and foreground launchers.
+- ⏳ Add CI smoke checks on Linux, macOS, and Windows, plus reproducible release artifacts.
 - Add provider/model identity to every LLM cache policy and improve shared cache strategy.
 - Preserve unchanged TTS artifacts during editor rerenders where safe.
 - Consume downloaded subtitles when their timing/quality beats ASR.
@@ -407,7 +413,7 @@ of its underlying footage.
 - **Pipeline:** Python-first, deterministic media stages around LLM understand/write/judge.
 - **ASR/TTS:** CPU-only Parakeet via sherpa-onnx and PocketTTS; no GPU requirement.
 - **Frontend:** minimal static vanilla UI served by FastAPI.
-- **Deployment:** this VM with systemd and the exe.dev proxy for the current demo.
+- **Deployment:** local foreground launchers on Linux/macOS/Windows; this VM additionally uses systemd and the exe.dev proxy.
 - **Providers:** swappable provider/base URL/model, with Hyper as the default picker entry
   and OpenRouter for broad multimodal selection.
 - **Voices/IP:** original personas and procedural silhouettes; built-in/custom voice

@@ -309,11 +309,13 @@ async function updateProviderUI(){
 async function loadProviders(){
   const r=await fetch('/api/providers');
   if(!r.ok) throw new Error(await r.text());
-  providers=(await r.json()).providers || [];
+  const payload=await r.json();
+  providers=payload.providers || [];
   const opts=providers.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
   providerEl.innerHTML=opts;
   judgeProviderEl.innerHTML='<option value="">Judge = same as writer</option>'+opts;
-  providerEl.value='hyper';
+  const preferred=payload.default_provider;
+  providerEl.value=providers.some(p=>p.id===preferred) ? preferred : 'hyper';
   await updateProviderUI();
 }
 providerEl.addEventListener('change',updateProviderUI);

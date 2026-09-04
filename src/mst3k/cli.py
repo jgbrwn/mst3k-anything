@@ -58,10 +58,7 @@ def cmd_render(args) -> None:
         voice.validate_voice_reference(job)
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
-    # prefer recent yt-dlp in ~/.local/bin over any system copy; add to PATH
-    local_yt = Path.home() / ".local" / "bin"
-    if (local_yt / "yt-dlp").exists():
-        os.environ["PATH"] = f"{local_yt}{os.pathsep}" + os.environ.get("PATH", "")
+    # Tool locations are resolved centrally so the same CLI works on all platforms.
     # optional density bias from api (submitted via UI)
     bias = os.environ.get("MST3K_RIFF_DENSITY_BIAS")
     if bias is not None:
@@ -90,8 +87,8 @@ def cmd_render(args) -> None:
     # start our own process group so os.killpg in cancel hits us + ffmpeg+pockettts
     try:
         os.setsid()
-    except OSError:
-        pass  # already pg leader
+    except (AttributeError, OSError):
+        pass  # already pg leader or running on Windows
 
     def step(name, fn):
         t0 = time.time()

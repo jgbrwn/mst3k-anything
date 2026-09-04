@@ -92,6 +92,32 @@ class RenderManifestTests(unittest.TestCase):
         selected = providers._filter_multimodal([hyper, neural, text_only])
         self.assertEqual([m["id"] for m in selected], ["kimi-k3-fast", "qwen3.8-flash"])
 
+    def test_cross_platform_tool_and_python_overrides(self):
+        with patch.dict(os.environ, {
+            "MST3K_FFMPEG": "/custom/bin/ffmpeg",
+            "MST3K_ASR_PYTHON": "/custom/asr/python",
+        }):
+            self.assertEqual(config.tool("ffmpeg"), "/custom/bin/ffmpeg")
+            self.assertEqual(config.venv_python("asr-venv"), "/custom/asr/python")
+
+    def test_provider_settings_prefer_process_environment_and_ignore_template_keys(self):
+        with patch.dict(os.environ, {
+            "HYPER_BASE_URL": "https://process.example/v1",
+            "HYPER_API_KEY": "process-key",
+            "HYPER_WRITER_MODEL": "process-model",
+        }):
+            row = providers.load_providers()["hyper"]
+            self.assertEqual(row["base_url"], "https://process.example/v1")
+            self.assertEqual(row["key"], "process-key")
+            self.assertEqual(row["default_model"], "process-model")
+        with patch.dict(os.environ, {"HYPER_API_KEY": "<your-hyper-key>"}):
+            self.assertIsNone(providers.load_providers()["hyper"]["key"])
+
+    def test_asr_runner_passes_model_path_as_an_argument(self):
+        self.assertIn("audio, out, start_sec, end_sec, model_dir = sys.argv[1:6]",
+                      transcribe._RUNNER)
+        self.assertIn('os.path.join(model_dir, "model.int8.onnx")', transcribe._RUNNER)
+
     def test_llm_repairs_truncated_json_once(self):
         client = llm.LLM("https://example.invalid", "key", "model")
         with patch.object(client, "chat", side_effect=['{"x":', '{"x": 1}']):
