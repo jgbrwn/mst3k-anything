@@ -30,15 +30,16 @@ voices, and procedural silhouettes are original.
 
 ### Current examples
 
-`docs/examples/deadwood-relentless/` contains two completed Deadwood runs as of
-September 2, 2026. Both use Relentless density (bias `4`) on the same roughly 4:50,
+`docs/examples/deadwood-relentless/` contains three completed Deadwood runs as of
+September 4, 2026. All use Relentless density (bias `4`) on the same roughly 4:50,
 1280×720 source:
 
-- Job 62: OpenRouter `openai/gpt-5.6-luna` as writer and judge; 27/27 rendered, 8 judge rewrites.
-- Job 63: OpenRouter `google/gemma-4-31b-it` writer and `x-ai/grok-4.6` judge; 26/27 rendered, 23 judge rewrites (the final cue hit the video boundary).
+- Job 72 — anecdotal first place: OpenRouter `google/gemini-3.8-flash` writer and `deepseek/deepseek-v4-flash-vision-exp` judge; 27/27 rendered and all 27 retained without rewrites.
+- Job 62 — anecdotal second place: OpenRouter `openai/gpt-5.6-luna` as writer and judge; 27/27 rendered, 8 judge rewrites.
+- Job 63 — anecdotal third place: OpenRouter `google/gemma-4-31b-it` writer and `x-ai/grok-4.6` judge; 26/27 rendered, 23 judge rewrites (the final cue hit the video boundary).
 
-The directory includes both MP4s, their SRTs, final rendered manifests, posters, and a
-comparison README.
+The directory includes all three MP4s, their SRTs, final rendered manifests, one winner
+poster, and a comparison README. Sol and Fable were not tested.
 
 ## 2. Architecture
 
@@ -263,14 +264,17 @@ by default.
 This is not a controlled benchmark. The earlier working impression favored **GPT-5.6
 Luna** (`openai/gpt-5.6-luna`) for writing and joke landing, with **GLM 5.3 Flash**
 (`z-ai/glm-5.3-flash`) next and **Qwen 3.8 Flash**/ **Kimi-k3-fast** generally weaker
-in those runs. The new Deadwood comparison suggests that the **Gemma 4 31B writer +
-Grok 4.6 judge** pairing can be roughly on par with Luna on this source, so the result
-is better described as a model-pair observation than a strict ranking.
+in those runs. The latest Deadwood comparison makes the **Gemini Flash 3.8 writer +
+DeepSeek V4 Flash Vision judge** the current anecdotal winner: Gemini produced deeper,
+funnier, context-aware turns, while DeepSeek retained all 27. That pair was roughly 4–5×
+more expensive than the value-oriented combinations. Sol and Fable were not tested.
 
-Job 62 is the Luna reference (27/27 rendered, 8 judge rewrites); Job 63 is the Gemma/Grok
-reference (26/27 rendered, 23 judge rewrites). A future fixed-clip A/B benchmark should
-record human ratings, judge scores, rewrite/drop rates, causal-reference errors, latency,
-and cost before treating any ordering as a measurement.
+Job 72 is the Gemini/DeepSeek reference (27/27 rendered, no rewrite requests); Job 62 is
+the Luna reference (27/27 rendered, 8 judge rewrites); Job 63 is the Gemma/Grok reference
+(26/27 rendered, 23 judge rewrites). The ranking is only a model-pair observation on this
+clip. A future fixed-clip A/B benchmark should record human ratings, judge scores,
+rewrite/drop rates, causal-reference errors, latency, and cost before treating any
+ordering as a measurement.
 
 ## 5. Cache and reliability model
 

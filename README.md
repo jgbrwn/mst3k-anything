@@ -20,23 +20,30 @@ macOS, and Windows from prerequisite installation through the first WebUI job.
 
 ## Example output
 
-[![Deadwood Relentless — Luna](docs/examples/deadwood-relentless/poster.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-riffed.mp4)
-[![Deadwood Relentless — Gemma + Grok](docs/examples/deadwood-relentless/poster-gemma31b-grok46.jpg)](docs/examples/deadwood-relentless/deadwood-relentless-gemma31b-grok46-riffed.mp4)
+![Anecdotal Deadwood winner — Gemini Flash 3.8 + DeepSeek V4 Flash Vision](docs/examples/deadwood-relentless/poster-gemini38-deepseekv4.jpg)
 
-The [`Deadwood` Relentless comparison](docs/examples/deadwood-relentless/) contains two
-complete 4:50 runs using density bias `4`. The Luna pair rendered 27/27 riffs; the
-Gemma 31B writer + Grok 4.6 judge pair rendered 26/27 because its final cue reached the
-video boundary. Both MP4s, SRTs, and final `riffs.json` manifests are included.
+The [`Deadwood` Relentless comparison](docs/examples/deadwood-relentless/) contains three
+roughly 4:50 runs using density bias `4`. For this anecdotal test, the Gemini Flash 3.8
+writer + DeepSeek V4 Flash Vision judge is the winner; it was also roughly 4–5× more
+expensive than the value-oriented combinations. Sol and Fable were not tested.
+
+1. [**1st place — Gemini Flash 3.8 writer + DeepSeek V4 Flash Vision judge**](docs/examples/deadwood-relentless/deadwood-relentless-gemini38-deepseekv4-riffed.mp4)
+2. [**2nd place — GPT-5.6 Luna writer + judge**](docs/examples/deadwood-relentless/deadwood-relentless-riffed.mp4)
+3. [**3rd place — Gemma 4 31B writer + Grok 4.6 judge**](docs/examples/deadwood-relentless/deadwood-relentless-gemma31b-grok46-riffed.mp4)
+
+The comparison directory includes the matching SRT subtitles and final `riffs.json`
+manifests for all three videos.
 
 ## Informal model notes
 
 The first informal impression favored **GPT-5.6 Luna** (`openai/gpt-5.6-luna`) for
 writing and joke landing, with **GLM-5.3 Flash** (`z-ai/glm-5.3-flash`) next and **Qwen
-3.8 Flash** / **Kimi-k3-fast** generally weaker in those runs. The new Deadwood
-comparison suggests the **Gemma 4 31B writer + Grok 4.6 judge** pairing can be roughly
-on par with Luna on this source, so this is not a strict model ranking. It is an
-informal observation, not a controlled benchmark; model pair, prompt/cache state, and
-source material can change the result.
+3.8 Flash** / **Kimi-k3-fast** generally weaker in those runs. The latest Deadwood run
+makes **Gemini Flash 3.8 writer + DeepSeek V4 Flash Vision judge** the current anecdotal
+winner: Gemini produced deeper, funnier context-aware turns, while DeepSeek retained all
+of them. That pair was roughly 4–5× more expensive than the value-oriented combinations.
+**Sol and Fable were not tested.** This is not a controlled benchmark; model pair,
+prompt/cache state, and source material can change the result.
 
 ## Highlights
 

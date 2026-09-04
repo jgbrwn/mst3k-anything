@@ -1,0 +1,448 @@
+[
+  {
+    "gap": 1,
+    "speaker": "riffer",
+    "line": "So far it's mostly cold asphalt.",
+    "words": 6,
+    "when": 0.35,
+    "start": 8.659,
+    "duration": 2.28,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid at 8.31s",
+      "7.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 2,
+    "speaker": "riffer",
+    "line": "Riveting footage of an oncoming minivan.",
+    "words": 6,
+    "when": 0.35,
+    "start": 19.278,
+    "duration": 2.6,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "frame:pre at 16.43s",
+      "12.5s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 3,
+    "speaker": "riffer",
+    "line": "Even the telephone pole looks chilly.",
+    "words": 6,
+    "when": 0.35,
+    "start": 29.896,
+    "duration": 2.102542,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid at 29.55s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 4,
+    "speaker": "riffer",
+    "line": "Brace for the downtown.",
+    "words": 4,
+    "when": 0.35,
+    "start": 35.95,
+    "duration": 1.56,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "frame:mid at 35.6s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 5,
+    "speaker": "riffer",
+    "line": "That's just normal pedestrians.",
+    "words": 4,
+    "when": 0.35,
+    "start": 56.577,
+    "duration": 2.2,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "frame:mid at 56.23s",
+      "53.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 6,
+    "speaker": "riffer",
+    "line": "Trolley taking its time.",
+    "words": 4,
+    "when": 0.35,
+    "start": 65.95,
+    "duration": 1.817458,
+    "timing": "cue",
+    "mechanism": "sound_button",
+    "evidence": [
+      "frame:mid at 65.6s",
+      "57.0s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 7,
+    "speaker": "riffer",
+    "line": "Silverado, where the wildest gamble in town is wondering if this traffic light will ever turn green.",
+    "words": 17,
+    "when": 0.35,
+    "start": 71.295,
+    "duration": 5.88,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:69.9s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 8,
+    "speaker": "riffer",
+    "line": "A squad car patrolling the void.",
+    "words": 6,
+    "when": 0.35,
+    "start": 82.403,
+    "duration": 2.063208,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 9,
+    "speaker": "riffer",
+    "line": "Rugged camper creeping through.",
+    "words": 4,
+    "when": 0.35,
+    "start": 94.75,
+    "duration": 2.12,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 10,
+    "speaker": "riffer",
+    "line": "Behold, the entire parade.",
+    "words": 4,
+    "when": 0.35,
+    "start": 100.017,
+    "duration": 2.36,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:mid",
+      "transcript:setup:57.0s"
+    ],
+    "callback_to": 5,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 11,
+    "speaker": "riffer",
+    "line": "Such selfless public service.",
+    "words": 4,
+    "when": 0.35,
+    "start": 119.95,
+    "duration": 2.2,
+    "timing": "cue",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "transcript:setup:109.5s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 12,
+    "speaker": "riffer",
+    "line": "And down goes the camera.",
+    "words": 5,
+    "when": 0.35,
+    "start": 127.15,
+    "duration": 1.48,
+    "timing": "cue",
+    "mechanism": "production_critique",
+    "evidence": [
+      "frame:mid"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 13,
+    "speaker": "riffer",
+    "line": "Hard to slow down from a crawl.",
+    "words": 7,
+    "when": 0.35,
+    "start": 136.08,
+    "duration": 1.96,
+    "timing": "cue",
+    "mechanism": "character_address",
+    "evidence": [
+      "transcript:132.2s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 14,
+    "speaker": "riffer",
+    "line": "Very *brisk* display of parked sedans.",
+    "words": 6,
+    "when": 0.35,
+    "start": 146.699,
+    "duration": 2.707708,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:143.1s",
+      "frame:mid at 146.35s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 15,
+    "speaker": "riffer",
+    "line": "Careful, that twenty-seven might ignite the pavement.",
+    "words": 7,
+    "when": 0.35,
+    "start": 157.317,
+    "duration": 2.782958,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:pre at 154.47s",
+      "transcript:149.3s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 16,
+    "speaker": "riffer",
+    "line": "Where the historic tension peaks.",
+    "words": 5,
+    "when": 0.35,
+    "start": 167.936,
+    "duration": 2.102542,
+    "timing": "cue",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "transcript:164.6s",
+      "frame:mid at 167.59s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 17,
+    "speaker": "riffer",
+    "line": "Ah yes, the dreaded *murder murdering*.",
+    "words": 6,
+    "when": 0.35,
+    "start": 178.554,
+    "duration": 2.708458,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "transcript:175.0s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 18,
+    "speaker": "riffer",
+    "line": "And a firm grasp on local folklore.",
+    "words": 7,
+    "when": 0.35,
+    "start": 189.173,
+    "duration": 2.779708,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "transcript:183.8s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 19,
+    "speaker": "riffer",
+    "line": "Tough room for pocket eights.",
+    "words": 5,
+    "when": 0.35,
+    "start": 199.791,
+    "duration": 1.72,
+    "timing": "cue",
+    "mechanism": "comparison",
+    "evidence": [
+      "transcript:183.8s",
+      "transcript:194.2s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 20,
+    "speaker": "riffer",
+    "line": "A very formal legal defense.",
+    "words": 5,
+    "when": 0.35,
+    "start": 210.409,
+    "duration": 2.173833,
+    "timing": "cue",
+    "mechanism": "literalization",
+    "evidence": [
+      "transcript:204.6s",
+      "transcript:206.4s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 21,
+    "speaker": "riffer",
+    "line": "Scenic bench facing the mud patches.",
+    "words": 6,
+    "when": 0.35,
+    "start": 221.028,
+    "duration": 2.44,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid at 220.68s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 22,
+    "speaker": "riffer",
+    "line": "Thirty-one, slow down you madman.",
+    "words": 5,
+    "when": 0.35,
+    "start": 231.646,
+    "duration": 2.245083,
+    "timing": "cue",
+    "mechanism": "callback",
+    "evidence": [
+      "frame:pre at 228.8s",
+      "transcript:224.2s"
+    ],
+    "callback_to": 15,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 23,
+    "speaker": "riffer",
+    "line": "Deadwood Tourism Board wants a word.",
+    "words": 6,
+    "when": 0.35,
+    "start": 242.265,
+    "duration": 2.28,
+    "timing": "cue",
+    "mechanism": "mock_narration",
+    "evidence": [
+      "transcript:234.7s",
+      "frame:pre at 239.41s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 24,
+    "speaker": "riffer",
+    "line": "Speed limit thirty-five. Uncharted territory.",
+    "words": 5,
+    "when": 0.35,
+    "start": 252.883,
+    "duration": 3.32,
+    "timing": "cue",
+    "mechanism": "escalation",
+    "evidence": [
+      "frame:mid at 252.53s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 25,
+    "speaker": "riffer",
+    "line": "Escaping downtown at a furious crawl.",
+    "words": 6,
+    "when": 0.35,
+    "start": 263.502,
+    "duration": 2.6,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "frame:mid at 263.15s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 26,
+    "speaker": "riffer",
+    "line": "As opposed to *earlier*?",
+    "words": 4,
+    "when": 0.35,
+    "start": 277.15,
+    "duration": 1.947083,
+    "timing": "cue",
+    "mechanism": "observation",
+    "evidence": [
+      "transcript:274.1s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  },
+  {
+    "gap": 27,
+    "speaker": "riffer",
+    "line": "Surviving the Deadwood rush.",
+    "words": 4,
+    "when": 0.35,
+    "start": 289.924,
+    "duration": 0.023573999999939588,
+    "timing": "cue",
+    "mechanism": "anti_joke",
+    "evidence": [
+      "frame:mid at 289.57s",
+      "transcript:288.0s"
+    ],
+    "callback_to": null,
+    "overlap_allowed": true
+  }
+]
